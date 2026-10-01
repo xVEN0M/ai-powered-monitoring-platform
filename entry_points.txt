@@ -1,2 +1,4 @@
 [console_scripts]
-uvicorn = uvicorn.main:main
+
+[gui_scripts]
+

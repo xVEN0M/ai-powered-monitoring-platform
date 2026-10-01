@@ -1,33 +1,36 @@
-from fastapi import FastAPI
+class Doc:
+    """Define the documentation of a type annotation using `Annotated`, to be
+        used in class attributes, function and method parameters, return values,
+        and variables.
 
-from database.database import engine
-from database.base import Base
-from models.user import User
-from auth.auth_routes import router as auth_router
-from routes.user_routes import router as user_router
-from models.device import Device
-from routes.device_routes import router as device_router
-from routes.scan_routes import router as scan_router
+    The value should be a positional-only string literal to allow static tools
+    like editors and documentation generators to use it.
 
-Base.metadata.create_all(bind=engine)
-app = FastAPI(
-    title="AI-Powered Enterprise Network Security & Monitoring Platform"
-)
-app.include_router(device_router)
-app.include_router(user_router)
-app.include_router(auth_router)
-app.include_router(scan_router)
+    This complements docstrings.
 
-@app.get("/")
-def home():
-    return {
-        "message": "Backend is working successfully!"
-    }
+    The string value passed is available in the attribute `documentation`.
 
-@app.get("/health")
-def health():
-    return {
-        "status": "Running",
-        "backend": "Healthy",
-        "version": "1.0.0"
-    }
+    Example:
+
+    ```Python
+    from typing import Annotated
+    from annotated_doc import Doc
+
+    def hi(name: Annotated[str, Doc("Who to say hi to")]) -> None:
+        print(f"Hi, {name}!")
+    ```
+    """
+
+    def __init__(self, documentation: str, /) -> None:
+        self.documentation = documentation
+
+    def __repr__(self) -> str:
+        return f"Doc({self.documentation!r})"
+
+    def __hash__(self) -> int:
+        return hash(self.documentation)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Doc):
+            return NotImplemented
+        return self.documentation == other.documentation
