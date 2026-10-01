@@ -1,5 +1,3 @@
 [console_scripts]
-fastapi = fastapi.cli:main
-
-[gui_scripts]
+idna=idna.cli:main
 
