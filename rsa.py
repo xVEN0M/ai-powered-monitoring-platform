@@ -1,295 +1,126 @@
-# This file is dual licensed under the terms of the Apache License, Version
-# 2.0, and the BSD License. See the LICENSE file in the root of this repository
-# for complete details.
+import math
+import struct
 
-from __future__ import annotations
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-import abc
-import random
-import typing
-from math import gcd, lcm
-
-from cryptography.hazmat.bindings._rust import openssl as rust_openssl
-from cryptography.hazmat.primitives import _serialization, hashes
-from cryptography.hazmat.primitives._asymmetric import AsymmetricPadding
-from cryptography.hazmat.primitives.asymmetric import utils as asym_utils
+from dns.dnssecalgs.cryptography import CryptographyPrivateKey, CryptographyPublicKey
+from dns.dnssectypes import Algorithm
+from dns.rdtypes.ANY.DNSKEY import DNSKEY
 
 
-class RSAPrivateKey(metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def decrypt(self, ciphertext: bytes, padding: AsymmetricPadding) -> bytes:
-        """
-        Decrypts the provided ciphertext.
-        """
+class PublicRSA(CryptographyPublicKey):
+    key: rsa.RSAPublicKey
+    key_cls = rsa.RSAPublicKey
+    algorithm: Algorithm
+    chosen_hash: hashes.HashAlgorithm
 
-    @property
-    @abc.abstractmethod
-    def key_size(self) -> int:
-        """
-        The bit length of the public modulus.
-        """
+    def verify(self, signature: bytes, data: bytes) -> None:
+        self.key.verify(signature, data, padding.PKCS1v15(), self.chosen_hash)
 
-    @abc.abstractmethod
-    def public_key(self) -> RSAPublicKey:
-        """
-        The RSAPublicKey associated with this private key.
-        """
+    def encode_key_bytes(self) -> bytes:
+        """Encode a public key per RFC 3110, section 2."""
+        pn = self.key.public_numbers()
+        _exp_len = math.ceil(int.bit_length(pn.e) / 8)
+        exp = int.to_bytes(pn.e, length=_exp_len, byteorder="big")
+        if _exp_len > 255:
+            exp_header = b"\0" + struct.pack("!H", _exp_len)
+        else:
+            exp_header = struct.pack("!B", _exp_len)
+        if pn.n.bit_length() < 512 or pn.n.bit_length() > 4096:
+            raise ValueError("unsupported RSA key length")
+        return exp_header + exp + pn.n.to_bytes((pn.n.bit_length() + 7) // 8, "big")
 
-    @abc.abstractmethod
+    @classmethod
+    def from_dnskey(cls, key: DNSKEY) -> "PublicRSA":
+        cls._ensure_algorithm_key_combination(key)
+        keyptr = key.key
+        (bytes_,) = struct.unpack("!B", keyptr[0:1])
+        keyptr = keyptr[1:]
+        if bytes_ == 0:
+            (bytes_,) = struct.unpack("!H", keyptr[0:2])
+            keyptr = keyptr[2:]
+        rsa_e = keyptr[0:bytes_]
+        rsa_n = keyptr[bytes_:]
+        return cls(
+            key=rsa.RSAPublicNumbers(
+                int.from_bytes(rsa_e, "big"), int.from_bytes(rsa_n, "big")
+            ).public_key(default_backend())
+        )
+
+
+class PrivateRSA(CryptographyPrivateKey):
+    key: rsa.RSAPrivateKey
+    key_cls = rsa.RSAPrivateKey
+    public_cls = PublicRSA
+    default_public_exponent = 65537
+
     def sign(
         self,
         data: bytes,
-        padding: AsymmetricPadding,
-        algorithm: asym_utils.Prehashed
-        | hashes.HashAlgorithm
-        | asym_utils.NoDigestInfo,
+        verify: bool = False,
+        deterministic: bool = True,
     ) -> bytes:
-        """
-        Signs the data.
-        """
+        """Sign using a private key per RFC 3110, section 3."""
+        signature = self.key.sign(
+            data, padding.PKCS1v15(), self.public_cls.chosen_hash  # pyright: ignore
+        )
+        if verify:
+            self.public_key().verify(signature, data)
+        return signature
 
-    @abc.abstractmethod
-    def private_numbers(self) -> RSAPrivateNumbers:
-        """
-        Returns an RSAPrivateNumbers.
-        """
-
-    @abc.abstractmethod
-    def private_bytes(
-        self,
-        encoding: _serialization.Encoding,
-        format: _serialization.PrivateFormat,
-        encryption_algorithm: _serialization.KeySerializationEncryption,
-    ) -> bytes:
-        """
-        Returns the key serialized as bytes.
-        """
-
-    @abc.abstractmethod
-    def __copy__(self) -> RSAPrivateKey:
-        """
-        Returns a copy.
-        """
-
-    @abc.abstractmethod
-    def __deepcopy__(self, memo: dict) -> RSAPrivateKey:
-        """
-        Returns a deep copy.
-        """
-
-
-RSAPrivateKeyWithSerialization = RSAPrivateKey
-RSAPrivateKey.register(rust_openssl.rsa.RSAPrivateKey)
-
-
-class RSAPublicKey(metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def encrypt(self, plaintext: bytes, padding: AsymmetricPadding) -> bytes:
-        """
-        Encrypts the given plaintext.
-        """
-
-    @property
-    @abc.abstractmethod
-    def key_size(self) -> int:
-        """
-        The bit length of the public modulus.
-        """
-
-    @abc.abstractmethod
-    def public_numbers(self) -> RSAPublicNumbers:
-        """
-        Returns an RSAPublicNumbers
-        """
-
-    @abc.abstractmethod
-    def public_bytes(
-        self,
-        encoding: _serialization.Encoding,
-        format: _serialization.PublicFormat,
-    ) -> bytes:
-        """
-        Returns the key serialized as bytes.
-        """
-
-    @abc.abstractmethod
-    def verify(
-        self,
-        signature: bytes,
-        data: bytes,
-        padding: AsymmetricPadding,
-        algorithm: asym_utils.Prehashed | hashes.HashAlgorithm,
-    ) -> None:
-        """
-        Verifies the signature of the data.
-        """
-
-    @abc.abstractmethod
-    def recover_data_from_signature(
-        self,
-        signature: bytes,
-        padding: AsymmetricPadding,
-        algorithm: hashes.HashAlgorithm | asym_utils.NoDigestInfo | None,
-    ) -> bytes:
-        """
-        Recovers the original data from the signature.
-        """
-
-    @abc.abstractmethod
-    def __eq__(self, other: object) -> bool:
-        """
-        Checks equality.
-        """
-
-    @abc.abstractmethod
-    def __copy__(self) -> RSAPublicKey:
-        """
-        Returns a copy.
-        """
-
-    @abc.abstractmethod
-    def __deepcopy__(self, memo: dict) -> RSAPublicKey:
-        """
-        Returns a deep copy.
-        """
-
-
-RSAPublicKeyWithSerialization = RSAPublicKey
-RSAPublicKey.register(rust_openssl.rsa.RSAPublicKey)
-
-RSAPrivateNumbers = rust_openssl.rsa.RSAPrivateNumbers
-RSAPublicNumbers = rust_openssl.rsa.RSAPublicNumbers
-
-
-def generate_private_key(
-    public_exponent: int,
-    key_size: int,
-    backend: typing.Any = None,
-) -> RSAPrivateKey:
-    _verify_rsa_parameters(public_exponent, key_size)
-    return rust_openssl.rsa.generate_private_key(public_exponent, key_size)
-
-
-def _verify_rsa_parameters(public_exponent: int, key_size: int) -> None:
-    if public_exponent not in (3, 65537):
-        raise ValueError(
-            "public_exponent must be either 3 (for legacy compatibility) or "
-            "65537. Almost everyone should choose 65537 here!"
+    @classmethod
+    def generate(cls, key_size: int) -> "PrivateRSA":
+        return cls(
+            key=rsa.generate_private_key(
+                public_exponent=cls.default_public_exponent,
+                key_size=key_size,
+                backend=default_backend(),
+            )
         )
 
-    if key_size < 1024:
-        raise ValueError("key_size must be at least 1024-bits.")
+
+class PublicRSAMD5(PublicRSA):
+    algorithm = Algorithm.RSAMD5
+    chosen_hash = hashes.MD5()
 
 
-def _modinv(e: int, m: int) -> int:
-    """
-    Modular Multiplicative Inverse. Returns x such that: (x*e) mod m == 1
-    """
-    x1, x2 = 1, 0
-    a, b = e, m
-    while b > 0:
-        q, r = divmod(a, b)
-        xn = x1 - q * x2
-        a, b, x1, x2 = b, r, x2, xn
-    return x1 % m
+class PrivateRSAMD5(PrivateRSA):
+    public_cls = PublicRSAMD5
 
 
-def rsa_crt_iqmp(p: int, q: int) -> int:
-    """
-    Compute the CRT (q ** -1) % p value from RSA primes p and q.
-    """
-    if p <= 1 or q <= 1:
-        raise ValueError("Values can't be <= 1")
-    return _modinv(q, p)
+class PublicRSASHA1(PublicRSA):
+    algorithm = Algorithm.RSASHA1
+    chosen_hash = hashes.SHA1()
 
 
-def rsa_crt_dmp1(private_exponent: int, p: int) -> int:
-    """
-    Compute the CRT private_exponent % (p - 1) value from the RSA
-    private_exponent (d) and p.
-    """
-    if private_exponent <= 1 or p <= 1:
-        raise ValueError("Values can't be <= 1")
-    return private_exponent % (p - 1)
+class PrivateRSASHA1(PrivateRSA):
+    public_cls = PublicRSASHA1
 
 
-def rsa_crt_dmq1(private_exponent: int, q: int) -> int:
-    """
-    Compute the CRT private_exponent % (q - 1) value from the RSA
-    private_exponent (d) and q.
-    """
-    if private_exponent <= 1 or q <= 1:
-        raise ValueError("Values can't be <= 1")
-    return private_exponent % (q - 1)
+class PublicRSASHA1NSEC3SHA1(PublicRSA):
+    algorithm = Algorithm.RSASHA1NSEC3SHA1
+    chosen_hash = hashes.SHA1()
 
 
-def rsa_recover_private_exponent(e: int, p: int, q: int) -> int:
-    """
-    Compute the RSA private_exponent (d) given the public exponent (e)
-    and the RSA primes p and q.
-
-    This uses the Carmichael totient function to generate the
-    smallest possible working value of the private exponent.
-    """
-    # This lambda_n is the Carmichael totient function.
-    # The original RSA paper uses the Euler totient function
-    # here: phi_n = (p - 1) * (q - 1)
-    # Either version of the private exponent will work, but the
-    # one generated by the older formulation may be larger
-    # than necessary. (lambda_n always divides phi_n)
-    if e <= 1 or p <= 1 or q <= 1:
-        raise ValueError("Values can't be <= 1")
-    return _modinv(e, lcm(p - 1, q - 1))
+class PrivateRSASHA1NSEC3SHA1(PrivateRSA):
+    public_cls = PublicRSASHA1NSEC3SHA1
 
 
-# Controls the number of iterations rsa_recover_prime_factors will perform
-# to obtain the prime factors.
-_MAX_RECOVERY_ATTEMPTS = 500
+class PublicRSASHA256(PublicRSA):
+    algorithm = Algorithm.RSASHA256
+    chosen_hash = hashes.SHA256()
 
 
-def rsa_recover_prime_factors(n: int, e: int, d: int) -> tuple[int, int]:
-    """
-    Compute factors p and q from the private exponent d. We assume that n has
-    no more than two factors. This function is adapted from code in PyCrypto.
-    """
-    # reject invalid values early
-    if d <= 1 or e <= 1:
-        raise ValueError("d, e can't be <= 1")
-    if 17 != pow(17, e * d, n):
-        raise ValueError("n, d, e don't match")
-    # See 8.2.2(i) in Handbook of Applied Cryptography.
-    ktot = d * e - 1
-    # The quantity d*e-1 is a multiple of phi(n), even,
-    # and can be represented as t*2^s.
-    t = ktot
-    while t % 2 == 0:
-        t = t // 2
-    # Cycle through all multiplicative inverses in Zn.
-    # The algorithm is non-deterministic, but there is a 50% chance
-    # any candidate a leads to successful factoring.
-    # See "Digitalized Signatures and Public Key Functions as Intractable
-    # as Factorization", M. Rabin, 1979
-    spotted = False
-    tries = 0
-    while not spotted and tries < _MAX_RECOVERY_ATTEMPTS:
-        a = random.randint(2, n - 1)
-        tries += 1
-        k = t
-        # Cycle through all values a^{t*2^i}=a^k
-        while k < ktot:
-            cand = pow(a, k, n)
-            # Check if a^k is a non-trivial root of unity (mod n)
-            if cand != 1 and cand != (n - 1) and pow(cand, 2, n) == 1:
-                # We have found a number such that (cand-1)(cand+1)=0 (mod n).
-                # Either of the terms divides n.
-                p = gcd(cand + 1, n)
-                spotted = True
-                break
-            k *= 2
-    if not spotted:
-        raise ValueError("Unable to compute factors p and q from exponent d.")
-    # Found !
-    q, r = divmod(n, p)
-    assert r == 0
-    p, q = sorted((p, q), reverse=True)
-    return (p, q)
+class PrivateRSASHA256(PrivateRSA):
+    public_cls = PublicRSASHA256
+
+
+class PublicRSASHA512(PublicRSA):
+    algorithm = Algorithm.RSASHA512
+    chosen_hash = hashes.SHA512()
+
+
+class PrivateRSASHA512(PrivateRSA):
+    public_cls = PublicRSASHA512

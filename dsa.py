@@ -1,179 +1,108 @@
-# This file is dual licensed under the terms of the Apache License, Version
-# 2.0, and the BSD License. See the LICENSE file in the root of this repository
-# for complete details.
+import struct
 
-from __future__ import annotations
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import dsa, utils
 
-import abc
-import typing
-
-from cryptography.hazmat.bindings._rust import openssl as rust_openssl
-from cryptography.hazmat.primitives import _serialization, hashes
-from cryptography.hazmat.primitives.asymmetric import utils as asym_utils
-from cryptography.utils import Buffer
+from dns.dnssecalgs.cryptography import CryptographyPrivateKey, CryptographyPublicKey
+from dns.dnssectypes import Algorithm
+from dns.rdtypes.ANY.DNSKEY import DNSKEY
 
 
-class DSAParameters(metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def generate_private_key(self) -> DSAPrivateKey:
-        """
-        Generates and returns a DSAPrivateKey.
-        """
+class PublicDSA(CryptographyPublicKey):
+    key: dsa.DSAPublicKey
+    key_cls = dsa.DSAPublicKey
+    algorithm = Algorithm.DSA
+    chosen_hash = hashes.SHA1()
 
-    @abc.abstractmethod
-    def parameter_numbers(self) -> DSAParameterNumbers:
-        """
-        Returns a DSAParameterNumbers.
-        """
+    def verify(self, signature: bytes, data: bytes) -> None:
+        sig_r = signature[1:21]
+        sig_s = signature[21:]
+        sig = utils.encode_dss_signature(
+            int.from_bytes(sig_r, "big"), int.from_bytes(sig_s, "big")
+        )
+        self.key.verify(sig, data, self.chosen_hash)
+
+    def encode_key_bytes(self) -> bytes:
+        """Encode a public key per RFC 2536, section 2."""
+        pn = self.key.public_numbers()
+        dsa_t = (self.key.key_size // 8 - 64) // 8
+        if dsa_t > 8:
+            raise ValueError("unsupported DSA key size")
+        octets = 64 + dsa_t * 8
+        res = struct.pack("!B", dsa_t)
+        res += pn.parameter_numbers.q.to_bytes(20, "big")
+        res += pn.parameter_numbers.p.to_bytes(octets, "big")
+        res += pn.parameter_numbers.g.to_bytes(octets, "big")
+        res += pn.y.to_bytes(octets, "big")
+        return res
+
+    @classmethod
+    def from_dnskey(cls, key: DNSKEY) -> "PublicDSA":
+        cls._ensure_algorithm_key_combination(key)
+        keyptr = key.key
+        (t,) = struct.unpack("!B", keyptr[0:1])
+        keyptr = keyptr[1:]
+        octets = 64 + t * 8
+        dsa_q = keyptr[0:20]
+        keyptr = keyptr[20:]
+        dsa_p = keyptr[0:octets]
+        keyptr = keyptr[octets:]
+        dsa_g = keyptr[0:octets]
+        keyptr = keyptr[octets:]
+        dsa_y = keyptr[0:octets]
+        return cls(
+            key=dsa.DSAPublicNumbers(  # type: ignore
+                int.from_bytes(dsa_y, "big"),
+                dsa.DSAParameterNumbers(
+                    int.from_bytes(dsa_p, "big"),
+                    int.from_bytes(dsa_q, "big"),
+                    int.from_bytes(dsa_g, "big"),
+                ),
+            ).public_key(default_backend()),
+        )
 
 
-DSAParametersWithNumbers = DSAParameters
-DSAParameters.register(rust_openssl.dsa.DSAParameters)
+class PrivateDSA(CryptographyPrivateKey):
+    key: dsa.DSAPrivateKey
+    key_cls = dsa.DSAPrivateKey
+    public_cls = PublicDSA
 
-
-class DSAPrivateKey(metaclass=abc.ABCMeta):
-    @property
-    @abc.abstractmethod
-    def key_size(self) -> int:
-        """
-        The bit length of the prime modulus.
-        """
-
-    @abc.abstractmethod
-    def public_key(self) -> DSAPublicKey:
-        """
-        The DSAPublicKey associated with this private key.
-        """
-
-    @abc.abstractmethod
-    def parameters(self) -> DSAParameters:
-        """
-        The DSAParameters object associated with this private key.
-        """
-
-    @abc.abstractmethod
     def sign(
         self,
-        data: Buffer,
-        algorithm: asym_utils.Prehashed | hashes.HashAlgorithm,
+        data: bytes,
+        verify: bool = False,
+        deterministic: bool = True,
     ) -> bytes:
-        """
-        Signs the data
-        """
+        """Sign using a private key per RFC 2536, section 3."""
+        public_dsa_key = self.key.public_key()
+        if public_dsa_key.key_size > 1024:
+            raise ValueError("DSA key size overflow")
+        der_signature = self.key.sign(
+            data, self.public_cls.chosen_hash  # pyright: ignore
+        )
+        dsa_r, dsa_s = utils.decode_dss_signature(der_signature)
+        dsa_t = (public_dsa_key.key_size // 8 - 64) // 8
+        octets = 20
+        signature = (
+            struct.pack("!B", dsa_t)
+            + int.to_bytes(dsa_r, length=octets, byteorder="big")
+            + int.to_bytes(dsa_s, length=octets, byteorder="big")
+        )
+        if verify:
+            self.public_key().verify(signature, data)
+        return signature
 
-    @abc.abstractmethod
-    def private_numbers(self) -> DSAPrivateNumbers:
-        """
-        Returns a DSAPrivateNumbers.
-        """
-
-    @abc.abstractmethod
-    def private_bytes(
-        self,
-        encoding: _serialization.Encoding,
-        format: _serialization.PrivateFormat,
-        encryption_algorithm: _serialization.KeySerializationEncryption,
-    ) -> bytes:
-        """
-        Returns the key serialized as bytes.
-        """
-
-    @abc.abstractmethod
-    def __copy__(self) -> DSAPrivateKey:
-        """
-        Returns a copy.
-        """
-
-    @abc.abstractmethod
-    def __deepcopy__(self, memo: dict) -> DSAPrivateKey:
-        """
-        Returns a deep copy.
-        """
+    @classmethod
+    def generate(cls, key_size: int) -> "PrivateDSA":
+        return cls(
+            key=dsa.generate_private_key(key_size=key_size),
+        )
 
 
-DSAPrivateKeyWithSerialization = DSAPrivateKey
-DSAPrivateKey.register(rust_openssl.dsa.DSAPrivateKey)
+class PublicDSANSEC3SHA1(PublicDSA):
+    algorithm = Algorithm.DSANSEC3SHA1
 
 
-class DSAPublicKey(metaclass=abc.ABCMeta):
-    @property
-    @abc.abstractmethod
-    def key_size(self) -> int:
-        """
-        The bit length of the prime modulus.
-        """
-
-    @abc.abstractmethod
-    def parameters(self) -> DSAParameters:
-        """
-        The DSAParameters object associated with this public key.
-        """
-
-    @abc.abstractmethod
-    def public_numbers(self) -> DSAPublicNumbers:
-        """
-        Returns a DSAPublicNumbers.
-        """
-
-    @abc.abstractmethod
-    def public_bytes(
-        self,
-        encoding: _serialization.Encoding,
-        format: _serialization.PublicFormat,
-    ) -> bytes:
-        """
-        Returns the key serialized as bytes.
-        """
-
-    @abc.abstractmethod
-    def verify(
-        self,
-        signature: Buffer,
-        data: Buffer,
-        algorithm: asym_utils.Prehashed | hashes.HashAlgorithm,
-    ) -> None:
-        """
-        Verifies the signature of the data.
-        """
-
-    @abc.abstractmethod
-    def __eq__(self, other: object) -> bool:
-        """
-        Checks equality.
-        """
-
-    @abc.abstractmethod
-    def __copy__(self) -> DSAPublicKey:
-        """
-        Returns a copy.
-        """
-
-    @abc.abstractmethod
-    def __deepcopy__(self, memo: dict) -> DSAPublicKey:
-        """
-        Returns a deep copy.
-        """
-
-
-DSAPublicKeyWithSerialization = DSAPublicKey
-DSAPublicKey.register(rust_openssl.dsa.DSAPublicKey)
-
-DSAPrivateNumbers = rust_openssl.dsa.DSAPrivateNumbers
-DSAPublicNumbers = rust_openssl.dsa.DSAPublicNumbers
-DSAParameterNumbers = rust_openssl.dsa.DSAParameterNumbers
-
-
-def generate_parameters(
-    key_size: int, backend: typing.Any = None
-) -> DSAParameters:
-    if key_size not in (1024, 2048, 3072, 4096):
-        raise ValueError("Key size must be 1024, 2048, 3072, or 4096 bits.")
-
-    return rust_openssl.dsa.generate_parameters(key_size)
-
-
-def generate_private_key(
-    key_size: int, backend: typing.Any = None
-) -> DSAPrivateKey:
-    parameters = generate_parameters(key_size)
-    return parameters.generate_private_key()
+class PrivateDSANSEC3SHA1(PrivateDSA):
+    public_cls = PublicDSANSEC3SHA1

@@ -1,146 +1,89 @@
-# This file is dual licensed under the terms of the Apache License, Version
-# 2.0, and the BSD License. See the LICENSE file in the root of this repository
-# for complete details.
+from abc import ABC, abstractmethod  # pylint: disable=no-name-in-module
+from typing import Any, Type
 
-from __future__ import annotations
-
-import abc
-import typing
-
-from cryptography.hazmat.bindings._rust import openssl as rust_openssl
-from cryptography.hazmat.primitives._cipheralgorithm import CipherAlgorithm
-from cryptography.hazmat.primitives.ciphers import modes
-from cryptography.utils import Buffer
+import dns.rdataclass
+import dns.rdatatype
+from dns.dnssectypes import Algorithm
+from dns.exception import AlgorithmKeyMismatch
+from dns.rdtypes.ANY.DNSKEY import DNSKEY
+from dns.rdtypes.dnskeybase import Flag
 
 
-class CipherContext(metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def update(self, data: Buffer) -> bytes:
-        """
-        Processes the provided bytes through the cipher and returns the results
-        as bytes.
-        """
+class GenericPublicKey(ABC):
+    algorithm: Algorithm
 
-    @abc.abstractmethod
-    def update_into(self, data: Buffer, buf: Buffer) -> int:
-        """
-        Processes the provided bytes and writes the resulting data into the
-        provided buffer. Returns the number of bytes written.
-        """
+    @abstractmethod
+    def __init__(self, key: Any) -> None:
+        pass
 
-    @abc.abstractmethod
-    def finalize(self) -> bytes:
-        """
-        Returns the results of processing the final block as bytes.
-        """
+    @abstractmethod
+    def verify(self, signature: bytes, data: bytes) -> None:
+        """Verify signed DNSSEC data"""
 
-    @abc.abstractmethod
-    def reset_nonce(self, nonce: bytes) -> None:
-        """
-        Resets the nonce for the cipher context to the provided value.
-        Raises an exception if it does not support reset or if the
-        provided nonce does not have a valid length.
-        """
+    @abstractmethod
+    def encode_key_bytes(self) -> bytes:
+        """Encode key as bytes for DNSKEY"""
 
+    @classmethod
+    def _ensure_algorithm_key_combination(cls, key: DNSKEY) -> None:
+        if key.algorithm != cls.algorithm:
+            raise AlgorithmKeyMismatch
 
-class AEADCipherContext(CipherContext, metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def authenticate_additional_data(self, data: Buffer) -> None:
-        """
-        Authenticates the provided bytes.
-        """
+    def to_dnskey(self, flags: int = Flag.ZONE, protocol: int = 3) -> DNSKEY:
+        """Return public key as DNSKEY"""
+        return DNSKEY(
+            rdclass=dns.rdataclass.IN,
+            rdtype=dns.rdatatype.DNSKEY,
+            flags=flags,
+            protocol=protocol,
+            algorithm=self.algorithm,
+            key=self.encode_key_bytes(),
+        )
 
+    @classmethod
+    @abstractmethod
+    def from_dnskey(cls, key: DNSKEY) -> "GenericPublicKey":
+        """Create public key from DNSKEY"""
 
-class AEADDecryptionContext(AEADCipherContext, metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def finalize_with_tag(self, tag: bytes) -> bytes:
-        """
-        Returns the results of processing the final block as bytes and allows
-        delayed passing of the authentication tag.
-        """
+    @classmethod
+    @abstractmethod
+    def from_pem(cls, public_pem: bytes) -> "GenericPublicKey":
+        """Create public key from PEM-encoded SubjectPublicKeyInfo as specified
+        in RFC 5280"""
 
-
-class AEADEncryptionContext(AEADCipherContext, metaclass=abc.ABCMeta):
-    @property
-    @abc.abstractmethod
-    def tag(self) -> bytes:
-        """
-        Returns tag bytes. This is only available after encryption is
-        finalized.
-        """
+    @abstractmethod
+    def to_pem(self) -> bytes:
+        """Return public-key as PEM-encoded SubjectPublicKeyInfo as specified
+        in RFC 5280"""
 
 
-Mode = typing.TypeVar(
-    "Mode", bound=typing.Optional[modes.Mode], covariant=True
-)
+class GenericPrivateKey(ABC):
+    public_cls: Type[GenericPublicKey]
 
+    @abstractmethod
+    def __init__(self, key: Any) -> None:
+        pass
 
-class Cipher(typing.Generic[Mode]):
-    def __init__(
+    @abstractmethod
+    def sign(
         self,
-        algorithm: CipherAlgorithm,
-        mode: Mode,
-        backend: typing.Any = None,
-    ) -> None:
-        if not isinstance(algorithm, CipherAlgorithm):
-            raise TypeError("Expected interface of CipherAlgorithm.")
+        data: bytes,
+        verify: bool = False,
+        deterministic: bool = True,
+    ) -> bytes:
+        """Sign DNSSEC data"""
 
-        if mode is not None:
-            # mypy needs this assert to narrow the type from our generic
-            # type. Maybe it won't some time in the future.
-            assert isinstance(mode, modes.Mode)
-            mode.validate_for_algorithm(algorithm)
+    @abstractmethod
+    def public_key(self) -> "GenericPublicKey":
+        """Return public key instance"""
 
-        self.algorithm = algorithm
-        self.mode = mode
+    @classmethod
+    @abstractmethod
+    def from_pem(
+        cls, private_pem: bytes, password: bytes | None = None
+    ) -> "GenericPrivateKey":
+        """Create private key from PEM-encoded PKCS#8"""
 
-    @typing.overload
-    def encryptor(
-        self: Cipher[modes.ModeWithAuthenticationTag],
-    ) -> AEADEncryptionContext: ...
-
-    @typing.overload
-    def encryptor(
-        self: _CIPHER_TYPE,
-    ) -> CipherContext: ...
-
-    def encryptor(self):
-        if isinstance(self.mode, modes.ModeWithAuthenticationTag):
-            if self.mode.tag is not None:
-                raise ValueError(
-                    "Authentication tag must be None when encrypting."
-                )
-
-        return rust_openssl.ciphers.create_encryption_ctx(
-            self.algorithm, self.mode
-        )
-
-    @typing.overload
-    def decryptor(
-        self: Cipher[modes.ModeWithAuthenticationTag],
-    ) -> AEADDecryptionContext: ...
-
-    @typing.overload
-    def decryptor(
-        self: _CIPHER_TYPE,
-    ) -> CipherContext: ...
-
-    def decryptor(self):
-        return rust_openssl.ciphers.create_decryption_ctx(
-            self.algorithm, self.mode
-        )
-
-
-_CIPHER_TYPE = Cipher[
-    typing.Union[
-        modes.ModeWithNonce,
-        modes.ModeWithTweak,
-        modes.ECB,
-        modes.ModeWithInitializationVector,
-        None,
-    ]
-]
-
-CipherContext.register(rust_openssl.ciphers.CipherContext)
-AEADEncryptionContext.register(rust_openssl.ciphers.AEADEncryptionContext)
-AEADDecryptionContext.register(rust_openssl.ciphers.AEADDecryptionContext)
+    @abstractmethod
+    def to_pem(self, password: bytes | None = None) -> bytes:
+        """Return private key as PEM-encoded PKCS#8"""

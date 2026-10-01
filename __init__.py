@@ -1,78 +1,104 @@
-# Copyright (C) Dnspython Contributors, see LICENSE for text of ISC license
+# while we don't use six in this file, we did bundle it for a long time, so
+# keep as part of module in a virtual way (through __all__)
+import six
+from .keys import (
+    SigningKey,
+    VerifyingKey,
+    BadSignatureError,
+    BadDigestError,
+    MalformedPointError,
+)
+from .curves import (
+    NIST192p,
+    NIST224p,
+    NIST256p,
+    NIST384p,
+    NIST521p,
+    SECP256k1,
+    BRAINPOOLP160r1,
+    BRAINPOOLP192r1,
+    BRAINPOOLP224r1,
+    BRAINPOOLP256r1,
+    BRAINPOOLP320r1,
+    BRAINPOOLP384r1,
+    BRAINPOOLP512r1,
+    SECP112r1,
+    SECP112r2,
+    SECP128r1,
+    SECP160r1,
+    Ed25519,
+    Ed448,
+    BRAINPOOLP160t1,
+    BRAINPOOLP192t1,
+    BRAINPOOLP224t1,
+    BRAINPOOLP256t1,
+    BRAINPOOLP320t1,
+    BRAINPOOLP384t1,
+    BRAINPOOLP512t1,
+)
+from .ecdh import (
+    ECDH,
+    NoKeyError,
+    NoCurveError,
+    InvalidCurveError,
+    InvalidSharedSecretError,
+)
+from .der import UnexpectedDER
+from . import _version
 
-from typing import Any, Dict, List, Tuple
+# This code comes from http://github.com/tlsfuzzer/python-ecdsa
+__all__ = [
+    "curves",
+    "der",
+    "ecdsa",
+    "ellipticcurve",
+    "keys",
+    "numbertheory",
+    "test_pyecdsa",
+    "util",
+    "six",
+]
 
-import dns._features
-import dns.asyncbackend
+_hush_pyflakes = [
+    SigningKey,
+    VerifyingKey,
+    BadSignatureError,
+    BadDigestError,
+    MalformedPointError,
+    UnexpectedDER,
+    InvalidCurveError,
+    NoKeyError,
+    InvalidSharedSecretError,
+    ECDH,
+    NoCurveError,
+    NIST192p,
+    NIST224p,
+    NIST256p,
+    NIST384p,
+    NIST521p,
+    SECP256k1,
+    BRAINPOOLP160r1,
+    BRAINPOOLP192r1,
+    BRAINPOOLP224r1,
+    BRAINPOOLP256r1,
+    BRAINPOOLP320r1,
+    BRAINPOOLP384r1,
+    BRAINPOOLP512r1,
+    SECP112r1,
+    SECP112r2,
+    SECP128r1,
+    SECP160r1,
+    Ed25519,
+    Ed448,
+    six.b(""),
+    BRAINPOOLP160t1,
+    BRAINPOOLP192t1,
+    BRAINPOOLP224t1,
+    BRAINPOOLP256t1,
+    BRAINPOOLP320t1,
+    BRAINPOOLP384t1,
+    BRAINPOOLP512t1,
+]
+del _hush_pyflakes
 
-if dns._features.have("doq"):
-    from dns._asyncbackend import NullContext
-    from dns.quic._asyncio import AsyncioQuicConnection as AsyncioQuicConnection
-    from dns.quic._asyncio import AsyncioQuicManager
-    from dns.quic._asyncio import AsyncioQuicStream as AsyncioQuicStream
-    from dns.quic._common import AsyncQuicConnection  # pyright: ignore
-    from dns.quic._common import AsyncQuicManager as AsyncQuicManager
-    from dns.quic._sync import SyncQuicConnection  # pyright: ignore
-    from dns.quic._sync import SyncQuicStream  # pyright: ignore
-    from dns.quic._sync import SyncQuicManager as SyncQuicManager
-
-    have_quic = True
-
-    def null_factory(
-        *args,  # pylint: disable=unused-argument
-        **kwargs,  # pylint: disable=unused-argument
-    ):
-        return NullContext(None)
-
-    def _asyncio_manager_factory(
-        context, *args, **kwargs  # pylint: disable=unused-argument
-    ):
-        return AsyncioQuicManager(*args, **kwargs)
-
-    # We have a context factory and a manager factory as for trio we need to have
-    # a nursery.
-
-    _async_factories: Dict[str, Tuple[Any, Any]] = {
-        "asyncio": (null_factory, _asyncio_manager_factory)
-    }
-
-    if dns._features.have("trio"):
-        import trio
-
-        # pylint: disable=ungrouped-imports
-        from dns.quic._trio import TrioQuicConnection as TrioQuicConnection
-        from dns.quic._trio import TrioQuicManager
-        from dns.quic._trio import TrioQuicStream as TrioQuicStream
-
-        def _trio_context_factory():
-            return trio.open_nursery()
-
-        def _trio_manager_factory(context, *args, **kwargs):
-            return TrioQuicManager(context, *args, **kwargs)
-
-        _async_factories["trio"] = (_trio_context_factory, _trio_manager_factory)
-
-    def factories_for_backend(backend=None):
-        if backend is None:
-            backend = dns.asyncbackend.get_default_backend()
-        return _async_factories[backend.name()]
-
-else:  # pragma: no cover
-    have_quic = False
-
-    class AsyncQuicStream:  # type: ignore
-        pass
-
-    class AsyncQuicConnection:  # type: ignore
-        async def make_stream(self) -> Any:
-            raise NotImplementedError
-
-    class SyncQuicStream:  # type: ignore
-        pass
-
-    class SyncQuicConnection:  # type: ignore
-        def make_stream(self) -> Any:
-            raise NotImplementedError
-
-
-Headers = List[Tuple[bytes, bytes]]
+__version__ = _version.get_versions()["version"]
