@@ -1,2 +1,5 @@
 [console_scripts]
-email_validator = email_validator.__main__:main
+fastapi = fastapi.cli:main
+
+[gui_scripts]
+
