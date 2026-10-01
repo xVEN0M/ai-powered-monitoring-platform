@@ -1,6 +1,6 @@
-import sys
+import os
+from nose import run
+run(
+    defaultTest=os.path.dirname(__file__),
+)
 
-from .cli import main
-
-if __name__ == "__main__":
-    sys.exit(main())
