@@ -15,21 +15,10 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 # OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-"""Class IN rdata type classes."""
+import dns.immutable
+import dns.rdtypes.nsbase
 
-__all__ = [
-    "A",
-    "AAAA",
-    "APL",
-    "DHCID",
-    "HTTPS",
-    "IPSECKEY",
-    "KX",
-    "NAPTR",
-    "NSAP",
-    "NSAP_PTR",
-    "PX",
-    "SRV",
-    "SVCB",
-    "WKS",
-]
+
+@dns.immutable.immutable
+class NSAP_PTR(dns.rdtypes.nsbase.UncompressedNS):
+    """NSAP-PTR record"""
