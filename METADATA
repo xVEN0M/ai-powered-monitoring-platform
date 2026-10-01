@@ -1,671 +1,466 @@
-Metadata-Version: 2.1
-Name: ecdsa
-Version: 0.19.2
-Summary: ECDSA cryptographic signature library (pure python)
-Home-page: http://github.com/tlsfuzzer/python-ecdsa
-Author: Brian Warner
-Author-email: warner@lothar.com
-License: MIT
-Classifier: Programming Language :: Python
-Classifier: Programming Language :: Python :: 2
-Classifier: Programming Language :: Python :: 2.6
-Classifier: Programming Language :: Python :: 2.7
+Metadata-Version: 2.4
+Name: email-validator
+Version: 2.3.0
+Summary: A robust email address syntax and deliverability validation library.
+Home-page: https://github.com/JoshData/python-email-validator
+Author: Joshua Tauberer
+Author-email: jt@occams.info
+License: Unlicense
+Keywords: email address validator
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: The Unlicense (Unlicense)
 Classifier: Programming Language :: Python :: 3
-Classifier: Programming Language :: Python :: 3.6
-Classifier: Programming Language :: Python :: 3.7
 Classifier: Programming Language :: Python :: 3.8
 Classifier: Programming Language :: Python :: 3.9
 Classifier: Programming Language :: Python :: 3.10
 Classifier: Programming Language :: Python :: 3.11
 Classifier: Programming Language :: Python :: 3.12
-Classifier: Programming Language :: Python :: 3.13
-Requires-Python: >=2.6, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: six>=1.9.0
-Provides-Extra: gmpy
-Requires-Dist: gmpy; extra == "gmpy"
-Provides-Extra: gmpy2
-Requires-Dist: gmpy2; extra == "gmpy2"
+Requires-Dist: dnspython>=2.0.0
+Requires-Dist: idna>=2.0.0
+Dynamic: license-file
 
-# Pure-Python ECDSA and ECDH
+email-validator: Validate Email Addresses
+=========================================
 
-[![GitHub CI](https://github.com/tlsfuzzer/python-ecdsa/actions/workflows/ci.yml/badge.svg)](https://github.com/tlsfuzzer/python-ecdsa/actions/workflows/ci.yml)
-[![Documentation Status](https://readthedocs.org/projects/ecdsa/badge/?version=latest)](https://ecdsa.readthedocs.io/en/latest/?badge=latest)
-[![Coverage Status](https://coveralls.io/repos/github/tlsfuzzer/python-ecdsa/badge.svg?branch=master)](https://coveralls.io/github/tlsfuzzer/python-ecdsa?branch=master)
-![condition coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tomato42/9b6ca1f3410207fbeca785a178781651/raw/python-ecdsa-condition-coverage.json)
-![mutation score](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tomato42/9b6ca1f3410207fbeca785a178781651/raw/python-ecdsa-mutation-score.json)
-[![CodeQL](https://github.com/tlsfuzzer/python-ecdsa/actions/workflows/codeql.yml/badge.svg)](https://github.com/tlsfuzzer/python-ecdsa/actions/workflows/codeql.yml)
-[![Latest Version](https://img.shields.io/pypi/v/ecdsa.svg?style=flat)](https://pypi.python.org/pypi/ecdsa/)
-![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat)
+A robust email address syntax and deliverability validation library for
+Python 3.8+ by [Joshua Tauberer](https://joshdata.me).
 
+This library validates that a string is of the form `name@example.com`
+and optionally checks that the domain name is set up to receive email.
+This is the sort of validation you would want when you are identifying
+users by their email address like on a registration form.
 
-This is an easy-to-use implementation of ECC (Elliptic Curve Cryptography)
-with support for ECDSA (Elliptic Curve Digital Signature Algorithm),
-EdDSA (Edwards-curve Digital Signature Algorithm) and ECDH
-(Elliptic Curve Diffie-Hellman), implemented purely in Python, released under
-the MIT license. With this library, you can quickly create key pairs (signing
-key and verifying key), sign messages, and verify the signatures. You can
-also agree on a shared secret key based on exchanged public keys.
-The keys and signatures are very short, making them easy to handle and
-incorporate into other protocols.
+Key features:
 
-**NOTE: This library should not be used in production settings, see [Security](#Security) for more details.**
+* Checks that an email address has the correct syntax --- great for
+  email-based registration/login forms or validating data.
+* Gives friendly English error messages when validation fails that you
+  can display to end-users.
+* Checks deliverability (optional): Does the domain name resolve?
+  (You can override the default DNS resolver to add query caching.)
+* Supports internationalized domain names (like `@ツ.life`),
+  internationalized local parts (like `ツ@example.com`),
+  and optionally parses display names (e.g. `"My Name" <me@example.com>`).
+* Rejects addresses with invalid or unsafe Unicode characters,
+  obsolete email address syntax that you'd find unexpected,
+  special use domain names like `@localhost`,
+  and domains without a dot by default.
+  This is an opinionated library!
+* Normalizes email addresses (important for internationalized
+  and quoted-string addresses! see below).
+* Python type annotations are used.
 
-## Features
+This is an opinionated library. You should definitely also consider using
+the less-opinionated [pyIsEmail](https://github.com/michaelherold/pyIsEmail)
+if it works better for you.
 
-This library provides key generation, signing, verifying, and shared secret
-derivation for five
-popular NIST "Suite B" GF(p) (_prime field_) curves, with key lengths of 192,
-224, 256, 384, and 521 bits. The "short names" for these curves, as known by
-the OpenSSL tool (`openssl ecparam -list_curves`), are: `prime192v1`,
-`secp224r1`, `prime256v1`, `secp384r1`, and `secp521r1`. It includes the
-256-bit curve `secp256k1` used by Bitcoin. There is also support for the
-regular (non-twisted) variants of Brainpool curves from 160 to 512 bits. The
-"short names" of those curves are: `brainpoolP160r1`, `brainpoolP192r1`,
-`brainpoolP224r1`, `brainpoolP256r1`, `brainpoolP320r1`, `brainpoolP384r1`,
-`brainpoolP512r1`. Few of the small curves from SEC standard are also
-included (mainly to speed-up testing of the library), those are:
-`secp112r1`, `secp112r2`, `secp128r1`, and `secp160r1`.
-Key generation, siging and verifying is also supported for Ed25519 and
-Ed448 curves.
-No other curves are included, but it is not too hard to add support for more
-curves over prime fields.
+[![Build Status](https://github.com/JoshData/python-email-validator/actions/workflows/test_and_build.yaml/badge.svg)](https://github.com/JoshData/python-email-validator/actions/workflows/test_and_build.yaml)
 
-## Dependencies
+View the [CHANGELOG / Release Notes](CHANGELOG.md) for the version history of changes in the library. Occasionally this README is ahead of the latest published package --- see the CHANGELOG for details.
 
-This library uses only Python and the 'six' package. It is compatible with
-Python 2.6, 2.7, and 3.6+. It also supports execution on alternative
-implementations like pypy and pypy3.
+---
 
-If `gmpy2` or `gmpy` is installed, they will be used for faster arithmetic.
-Either of them can be installed after this library is installed,
-`python-ecdsa` will detect their presence on start-up and use them
-automatically.
-You should prefer `gmpy2` on Python3 for optimal performance.
+Installation
+------------
 
-To run the OpenSSL compatibility tests, the 'openssl' tool must be in your
-`PATH`. This release has been tested successfully against OpenSSL 0.9.8o,
-1.0.0a, 1.0.2f, 1.1.1d and 3.0.1 (among others).
+This package [is on PyPI](https://pypi.org/project/email-validator/), so:
 
-
-## Installation
-
-This library is available on PyPI, it's recommended to install it using `pip`:
-
-```
-pip install ecdsa
+```sh
+pip install email-validator
 ```
 
-In case higher performance is wanted and using native code is not a problem,
-it's possible to specify installation together with `gmpy2`:
+(You might need to use `pip3` depending on your local environment.)
 
-```
-pip install ecdsa[gmpy2]
-```
+Quick Start
+-----------
 
-or (slower, legacy option):
-```
-pip install ecdsa[gmpy]
-```
-
-## Speed
-
-The following table shows how long this library takes to generate key pairs
-(`keygen`), to sign data (`sign`), to verify those signatures (`verify`),
-to derive a shared secret (`ecdh`), and
-to verify the signatures with no key-specific precomputation (`no PC verify`).
-All those values are in seconds.
-For convenience, the inverses of those values are also provided:
-how many keys per second can be generated (`keygen/s`), how many signatures
-can be made per second (`sign/s`), how many signatures can be verified
-per second (`verify/s`), how many shared secrets can be derived per second
-(`ecdh/s`), and how many signatures with no key specific
-precomputation can be verified per second (`no PC verify/s`). The size of raw
-signature (generally the smallest
-the way a signature can be encoded) is also provided in the `siglen` column.
-Use `tox -e speed` to generate this table on your own computer.
-On an Intel Core i7 4790K @ 4.0GHz I'm getting the following performance:
-
-```
-                  siglen    keygen   keygen/s      sign     sign/s    verify   verify/s  no PC verify  no PC verify/s
-        NIST192p:     48   0.00032s   3134.06   0.00033s   2985.53   0.00063s   1598.36       0.00129s         774.43
-        NIST224p:     56   0.00040s   2469.24   0.00042s   2367.88   0.00081s   1233.41       0.00170s         586.66
-        NIST256p:     64   0.00051s   1952.73   0.00054s   1867.80   0.00098s   1021.86       0.00212s         471.27
-        NIST384p:     96   0.00107s    935.92   0.00111s    904.23   0.00203s    491.77       0.00446s         224.00
-        NIST521p:    132   0.00210s    475.52   0.00215s    464.16   0.00398s    251.28       0.00874s         114.39
-       SECP256k1:     64   0.00052s   1921.54   0.00054s   1847.49   0.00105s    948.68       0.00210s         477.01
- BRAINPOOLP160r1:     40   0.00025s   4003.88   0.00026s   3845.12   0.00053s   1893.93       0.00105s         949.92
- BRAINPOOLP192r1:     48   0.00033s   3043.97   0.00034s   2975.98   0.00063s   1581.50       0.00135s         742.29
- BRAINPOOLP224r1:     56   0.00041s   2436.44   0.00043s   2315.51   0.00078s   1278.49       0.00180s         556.16
- BRAINPOOLP256r1:     64   0.00053s   1892.49   0.00054s   1846.24   0.00114s    875.64       0.00229s         437.25
- BRAINPOOLP320r1:     80   0.00073s   1361.26   0.00076s   1309.25   0.00143s    699.29       0.00322s         310.49
- BRAINPOOLP384r1:     96   0.00107s    931.29   0.00111s    901.80   0.00230s    434.19       0.00476s         210.20
- BRAINPOOLP512r1:    128   0.00207s    483.41   0.00212s    471.42   0.00425s    235.43       0.00912s         109.61
-       SECP112r1:     28   0.00015s   6672.53   0.00016s   6440.34   0.00031s   3265.41       0.00056s        1774.20
-       SECP112r2:     28   0.00015s   6697.11   0.00015s   6479.98   0.00028s   3524.72       0.00058s        1716.16
-       SECP128r1:     32   0.00018s   5497.65   0.00019s   5272.89   0.00036s   2747.39       0.00072s        1396.16
-       SECP160r1:     42   0.00025s   3949.32   0.00026s   3894.45   0.00046s   2153.85       0.00102s         985.07
-         Ed25519:     64   0.00076s   1324.48   0.00042s   2405.01   0.00109s    918.05       0.00344s         290.50
-           Ed448:    114   0.00176s    569.53   0.00115s    870.94   0.00282s    355.04       0.01024s          97.69
-
-                       ecdh     ecdh/s
-        NIST192p:   0.00104s    964.89
-        NIST224p:   0.00134s    748.63
-        NIST256p:   0.00170s    587.08
-        NIST384p:   0.00352s    283.90
-        NIST521p:   0.00717s    139.51
-       SECP256k1:   0.00154s    648.40
- BRAINPOOLP160r1:   0.00082s   1220.70
- BRAINPOOLP192r1:   0.00105s    956.75
- BRAINPOOLP224r1:   0.00136s    734.52
- BRAINPOOLP256r1:   0.00178s    563.32
- BRAINPOOLP320r1:   0.00252s    397.23
- BRAINPOOLP384r1:   0.00376s    266.27
- BRAINPOOLP512r1:   0.00733s    136.35
-       SECP112r1:   0.00046s   2180.40
-       SECP112r2:   0.00045s   2229.14
-       SECP128r1:   0.00054s   1868.15
-       SECP160r1:   0.00080s   1243.98
-```
-
-To test performance with `gmpy2` loaded, use `tox -e speedgmpy2`.
-On the same machine I'm getting the following performance with `gmpy2`:
-```
-                  siglen    keygen   keygen/s      sign     sign/s    verify   verify/s  no PC verify  no PC verify/s
-        NIST192p:     48   0.00017s   5933.40   0.00017s   5751.70   0.00032s   3125.28       0.00067s        1502.41
-        NIST224p:     56   0.00021s   4782.87   0.00022s   4610.05   0.00040s   2487.04       0.00089s        1126.90
-        NIST256p:     64   0.00023s   4263.98   0.00024s   4125.16   0.00045s   2200.88       0.00098s        1016.82
-        NIST384p:     96   0.00041s   2449.54   0.00042s   2399.96   0.00083s   1210.57       0.00172s         581.43
-        NIST521p:    132   0.00071s   1416.07   0.00072s   1389.81   0.00144s    692.93       0.00312s         320.40
-       SECP256k1:     64   0.00024s   4245.05   0.00024s   4122.09   0.00045s   2206.40       0.00094s        1068.32
- BRAINPOOLP160r1:     40   0.00014s   6939.17   0.00015s   6681.55   0.00029s   3452.43       0.00057s        1769.81
- BRAINPOOLP192r1:     48   0.00017s   5920.05   0.00017s   5774.36   0.00034s   2979.00       0.00069s        1453.19
- BRAINPOOLP224r1:     56   0.00021s   4732.12   0.00022s   4622.65   0.00041s   2422.47       0.00087s        1149.87
- BRAINPOOLP256r1:     64   0.00024s   4233.02   0.00024s   4115.20   0.00047s   2143.27       0.00098s        1015.60
- BRAINPOOLP320r1:     80   0.00032s   3162.38   0.00032s   3077.62   0.00063s   1598.83       0.00136s         737.34
- BRAINPOOLP384r1:     96   0.00041s   2436.88   0.00042s   2395.62   0.00083s   1202.68       0.00178s         562.85
- BRAINPOOLP512r1:    128   0.00063s   1587.60   0.00064s   1558.83   0.00125s    799.96       0.00281s         355.83
-       SECP112r1:     28   0.00009s  11118.66   0.00009s  10775.48   0.00018s   5456.00       0.00033s        3020.83
-       SECP112r2:     28   0.00009s  11322.97   0.00009s  10857.71   0.00017s   5748.77       0.00032s        3094.28
-       SECP128r1:     32   0.00010s  10078.39   0.00010s   9665.27   0.00019s   5200.58       0.00036s        2760.88
-       SECP160r1:     42   0.00015s   6875.51   0.00015s   6647.35   0.00029s   3422.41       0.00057s        1768.35
-         Ed25519:     64   0.00030s   3322.56   0.00018s   5568.63   0.00046s   2165.35       0.00153s         654.02
-           Ed448:    114   0.00060s   1680.53   0.00039s   2567.40   0.00096s   1036.67       0.00350s         285.62
-
-                       ecdh     ecdh/s
-        NIST192p:   0.00050s   1985.70
-        NIST224p:   0.00066s   1524.16
-        NIST256p:   0.00071s   1413.07
-        NIST384p:   0.00127s    788.89
-        NIST521p:   0.00230s    434.85
-       SECP256k1:   0.00071s   1409.95
- BRAINPOOLP160r1:   0.00042s   2374.65
- BRAINPOOLP192r1:   0.00051s   1960.01
- BRAINPOOLP224r1:   0.00066s   1518.37
- BRAINPOOLP256r1:   0.00071s   1399.90
- BRAINPOOLP320r1:   0.00100s    997.21
- BRAINPOOLP384r1:   0.00129s    777.51
- BRAINPOOLP512r1:   0.00210s    475.99
-       SECP112r1:   0.00022s   4457.70
-       SECP112r2:   0.00024s   4252.33
-       SECP128r1:   0.00028s   3589.31
-       SECP160r1:   0.00043s   2305.02
-```
-
-(there's also `gmpy` version, execute it using `tox -e speedgmpy`)
-
-For comparison, a highly optimised implementation (including curve-specific
-assembly for some curves), like the one in OpenSSL 1.1.1d, provides the
-following performance numbers on the same machine.
-Run `openssl speed ecdsa` and `openssl speed ecdh` to reproduce it:
-```
-                              sign    verify    sign/s verify/s
- 192 bits ecdsa (nistp192)   0.0002s   0.0002s   4785.6   5380.7
- 224 bits ecdsa (nistp224)   0.0000s   0.0001s  22475.6   9822.0
- 256 bits ecdsa (nistp256)   0.0000s   0.0001s  45069.6  14166.6
- 384 bits ecdsa (nistp384)   0.0008s   0.0006s   1265.6   1648.1
- 521 bits ecdsa (nistp521)   0.0003s   0.0005s   3753.1   1819.5
- 256 bits ecdsa (brainpoolP256r1)   0.0003s   0.0003s   2983.5   3333.2
- 384 bits ecdsa (brainpoolP384r1)   0.0008s   0.0007s   1258.8   1528.1
- 512 bits ecdsa (brainpoolP512r1)   0.0015s   0.0012s    675.1    860.1
-
-                              sign    verify    sign/s verify/s
- 253 bits EdDSA (Ed25519)   0.0000s   0.0001s  28217.9  10897.7
- 456 bits EdDSA (Ed448)     0.0003s   0.0005s   3926.5   2147.7
-
-                               op      op/s
- 192 bits ecdh (nistp192)   0.0002s   4853.4
- 224 bits ecdh (nistp224)   0.0001s  15252.1
- 256 bits ecdh (nistp256)   0.0001s  18436.3
- 384 bits ecdh (nistp384)   0.0008s   1292.7
- 521 bits ecdh (nistp521)   0.0003s   2884.7
- 256 bits ecdh (brainpoolP256r1)   0.0003s   3066.5
- 384 bits ecdh (brainpoolP384r1)   0.0008s   1298.0
- 512 bits ecdh (brainpoolP512r1)   0.0014s    694.8
-```
-
-Keys and signature can be serialized in different ways (see Usage, below).
-For a NIST192p key, the three basic representations require strings of the
-following lengths (in bytes):
-
-    to_string:  signkey= 24, verifykey= 48, signature=48
-    compressed: signkey=n/a, verifykey= 25, signature=n/a
-    DER:        signkey=106, verifykey= 80, signature=55
-    PEM:        signkey=278, verifykey=162, (no support for PEM signatures)
-
-## History
-
-In 2006, Peter Pearson announced his pure-python implementation of ECDSA in a
-[message to sci.crypt][1], available from his [download site][2]. In 2010,
-Brian Warner wrote a wrapper around this code, to make it a bit easier and
-safer to use. In 2020, Hubert Kario included an implementation of elliptic
-curve cryptography that uses Jacobian coordinates internally, improving
-performance about 20-fold. You are looking at the README for this wrapper.
-
-[1]: http://www.derkeiler.com/Newsgroups/sci.crypt/2006-01/msg00651.html
-[2]: http://webpages.charter.net/curryfans/peter/downloads.html
-
-## Testing
-
-To run the full test suite, do this:
-
-    tox -e coverage
-
-On an Intel Core i7 4790K @ 4.0GHz, the tests take about 18 seconds to execute.
-The test suite uses
-[`hypothesis`](https://github.com/HypothesisWorks/hypothesis) so there is some
-inherent variability in the test suite execution time.
-
-One part of `test_pyecdsa.py` and `test_ecdh.py` checks compatibility with
-OpenSSL, by running the "openssl" CLI tool, make sure it's in your `PATH` if
-you want to test compatibility with it (if OpenSSL is missing, too old, or
-doesn't support all the curves supported in upstream releases you will see
-skipped tests in the above `coverage` run).
-
-## Security
-
-This library was not designed with security in mind. If you are processing
-data that needs to be protected we suggest you use a quality wrapper around
-OpenSSL. [pyca/cryptography](https://cryptography.io) is one example of such
-a wrapper. The primary use-case of this library is as a portable library for
-interoperability testing and as a teaching tool.
-
-**This library does not protect against side-channel attacks.**
-
-Do not allow attackers to measure how long it takes you to generate a key pair
-or sign a message. Do not allow attackers to run code on the same physical
-machine when key pair generation or signing is taking place (this includes
-virtual machines). Do not allow attackers to measure how much power your
-computer uses while generating the key pair or signing a message. Do not allow
-attackers to measure RF interference coming from your computer while generating
-a key pair or signing a message. Note: just loading the private key will cause
-key pair generation. Other operations or attack vectors may also be
-vulnerable to attacks. **For a sophisticated attacker observing just one
-operation with a private key will be sufficient to completely
-reconstruct the private key**.
-
-Please also note that any Pure-python cryptographic library will be vulnerable
-to the same side-channel attacks. This is because Python does not provide
-side-channel secure primitives (with the exception of
-[`hmac.compare_digest()`][3]), making side-channel secure programming
-impossible.
-
-This library depends upon a strong source of random numbers. Do not use it on
-a system where `os.urandom()` does not provide cryptographically secure
-random numbers.
-
-[3]: https://docs.python.org/3/library/hmac.html#hmac.compare_digest
-
-## Usage
-
-You start by creating a `SigningKey`. You can use this to sign data, by passing
-in data as a byte string and getting back the signature (also a byte string).
-You can also ask a `SigningKey` to give you the corresponding `VerifyingKey`.
-The `VerifyingKey` can be used to verify a signature, by passing it both the
-data string and the signature byte string: it either returns True or raises
-`BadSignatureError`.
+If you're validating a user's email address before creating a user
+account in your application, you might do this:
 
 ```python
-from ecdsa import SigningKey
-sk = SigningKey.generate() # uses NIST192p
-vk = sk.verifying_key
-signature = sk.sign(b"message")
-assert vk.verify(signature, b"message")
-```
+from email_validator import validate_email, EmailNotValidError
 
-Each `SigningKey`/`VerifyingKey` is associated with a specific curve, like
-NIST192p (the default one). Longer curves are more secure, but take longer to
-use, and result in longer keys and signatures.
+email = "my+address@example.org"
 
-```python
-from ecdsa import SigningKey, NIST384p
-sk = SigningKey.generate(curve=NIST384p)
-vk = sk.verifying_key
-signature = sk.sign(b"message")
-assert vk.verify(signature, b"message")
-```
-
-The `SigningKey` can be serialized into several different formats: the shortest
-is to call `s=sk.to_string()`, and then re-create it with
-`SigningKey.from_string(s, curve)` . This short form does not record the
-curve, so you must be sure to pass to `from_string()` the same curve you used
-for the original key. The short form of a NIST192p-based signing key is just 24
-bytes long. If a point encoding is invalid or it does not lie on the specified
-curve, `from_string()` will raise `MalformedPointError`.
-
-```python
-from ecdsa import SigningKey, NIST384p
-sk = SigningKey.generate(curve=NIST384p)
-sk_string = sk.to_string()
-sk2 = SigningKey.from_string(sk_string, curve=NIST384p)
-print(sk_string.hex())
-print(sk2.to_string().hex())
-```
-
-Note: while the methods are called `to_string()` the type they return is
-actually `bytes`, the "string" part is leftover from Python 2.
-
-`sk.to_pem()` and `sk.to_der()` will serialize the signing key into the same
-formats that OpenSSL uses. The PEM file looks like the familiar ASCII-armored
-`"-----BEGIN EC PRIVATE KEY-----"` base64-encoded format, and the DER format
-is a shorter binary form of the same data.
-`SigningKey.from_pem()/.from_der()` will undo this serialization. These
-formats include the curve name, so you do not need to pass in a curve
-identifier to the deserializer. In case the file is malformed `from_der()`
-and `from_pem()` will raise `UnexpectedDER` or` MalformedPointError`.
-
-```python
-from ecdsa import SigningKey, NIST384p
-sk = SigningKey.generate(curve=NIST384p)
-sk_pem = sk.to_pem()
-sk2 = SigningKey.from_pem(sk_pem)
-# sk and sk2 are the same key
-```
-
-Likewise, the `VerifyingKey` can be serialized in the same way:
-`vk.to_string()/VerifyingKey.from_string()`, `to_pem()/from_pem()`, and
-`to_der()/from_der()`. The same `curve=` argument is needed for
-`VerifyingKey.from_string()`.
-
-```python
-from ecdsa import SigningKey, VerifyingKey, NIST384p
-sk = SigningKey.generate(curve=NIST384p)
-vk = sk.verifying_key
-vk_string = vk.to_string()
-vk2 = VerifyingKey.from_string(vk_string, curve=NIST384p)
-# vk and vk2 are the same key
-
-from ecdsa import SigningKey, VerifyingKey, NIST384p
-sk = SigningKey.generate(curve=NIST384p)
-vk = sk.verifying_key
-vk_pem = vk.to_pem()
-vk2 = VerifyingKey.from_pem(vk_pem)
-# vk and vk2 are the same key
-```
-
-There are a couple of different ways to compute a signature. Fundamentally,
-ECDSA takes a number that represents the data being signed, and returns a
-pair of numbers that represent the signature. The `hashfunc=` argument to
-`sk.sign()` and `vk.verify()` is used to turn an arbitrary string into a
-fixed-length digest, which is then turned into a number that ECDSA can sign,
-and both sign and verify must use the same approach. The default value is
-`hashlib.sha1`, but if you use NIST256p or a longer curve, you can use
-`hashlib.sha256` instead.
-
-There are also multiple ways to represent a signature. The default
-`sk.sign()` and `vk.verify()` methods present it as a short string, for
-simplicity and minimal overhead. To use a different scheme, use the
-`sk.sign(sigencode=)` and `vk.verify(sigdecode=)` arguments. There are helper
-functions in the `ecdsa.util` module that can be useful here.
-
-It is also possible to create a `SigningKey` from a "seed", which is
-deterministic. This can be used in protocols where you want to derive
-consistent signing keys from some other secret, for example when you want
-three separate keys and only want to store a single master secret. You should
-start with a uniformly-distributed unguessable seed with about `curve.baselen`
-bytes of entropy, and then use one of the helper functions in `ecdsa.util` to
-convert it into an integer in the correct range, and then finally pass it
-into `SigningKey.from_secret_exponent()`, like this:
-
-```python
-import os
-from ecdsa import NIST384p, SigningKey
-from ecdsa.util import randrange_from_seed__trytryagain
-
-def make_key(seed):
-  secexp = randrange_from_seed__trytryagain(seed, NIST384p.order)
-  return SigningKey.from_secret_exponent(secexp, curve=NIST384p)
-
-seed = os.urandom(NIST384p.baselen) # or other starting point
-sk1a = make_key(seed)
-sk1b = make_key(seed)
-# note: sk1a and sk1b are the same key
-assert sk1a.to_string() == sk1b.to_string()
-sk2 = make_key(b"2-"+seed)  # different key
-assert sk1a.to_string() != sk2.to_string()
-```
-
-In case the application will verify a lot of signatures made with a single
-key, it's possible to precompute some of the internal values to make
-signature verification significantly faster. The break-even point occurs at
-about 100 signatures verified.
-
-To perform precomputation, you can call the `precompute()` method
-on `VerifyingKey` instance:
-```python
-from ecdsa import SigningKey, NIST384p
-sk = SigningKey.generate(curve=NIST384p)
-vk = sk.verifying_key
-vk.precompute()
-signature = sk.sign(b"message")
-assert vk.verify(signature, b"message")
-```
-
-Once `precompute()` was called, all signature verifications with this key will
-be faster to execute.
-
-## OpenSSL Compatibility
-
-To produce signatures that can be verified by OpenSSL tools, or to verify
-signatures that were produced by those tools, use:
-
-```python
-# openssl ecparam -name prime256v1 -genkey -out sk.pem
-# openssl ec -in sk.pem -pubout -out vk.pem
-# echo "data for signing" > data
-# openssl dgst -sha256 -sign sk.pem -out data.sig data
-# openssl dgst -sha256 -verify vk.pem -signature data.sig data
-# openssl dgst -sha256 -prverify sk.pem -signature data.sig data
-
-import hashlib
-from ecdsa import SigningKey, VerifyingKey
-from ecdsa.util import sigencode_der, sigdecode_der
-
-with open("vk.pem") as f:
-   vk = VerifyingKey.from_pem(f.read())
-
-with open("data", "rb") as f:
-   data = f.read()
-
-with open("data.sig", "rb") as f:
-   signature = f.read()
-
-assert vk.verify(signature, data, hashlib.sha256, sigdecode=sigdecode_der)
-
-with open("sk.pem") as f:
-   sk = SigningKey.from_pem(f.read(), hashlib.sha256)
-
-new_signature = sk.sign_deterministic(data, sigencode=sigencode_der)
-
-with open("data.sig2", "wb") as f:
-   f.write(new_signature)
-
-# openssl dgst -sha256 -verify vk.pem -signature data.sig2 data
-```
-
-Note: if compatibility with OpenSSL 1.0.0 or earlier is necessary, the
-`sigencode_string` and `sigdecode_string` from `ecdsa.util` can be used for
-respectively writing and reading the signatures.
-
-The keys also can be written in format that openssl can handle:
-
-```python
-from ecdsa import SigningKey, VerifyingKey
-
-with open("sk.pem") as f:
-    sk = SigningKey.from_pem(f.read())
-with open("sk.pem", "wb") as f:
-    f.write(sk.to_pem())
-
-with open("vk.pem") as f:
-    vk = VerifyingKey.from_pem(f.read())
-with open("vk.pem", "wb") as f:
-    f.write(vk.to_pem())
-```
-
-## Entropy
-
-Creating a signing key with `SigningKey.generate()` requires some form of
-entropy (as opposed to
-`from_secret_exponent`/`from_string`/`from_der`/`from_pem`,
-which are deterministic and do not require an entropy source). The default
-source is `os.urandom()`, but you can pass any other function that behaves
-like `os.urandom` as the `entropy=` argument to do something different. This
-may be useful in unit tests, where you want to achieve repeatable results. The
-`ecdsa.util.PRNG` utility is handy here: it takes a seed and produces a strong
-pseudo-random stream from it:
-
-```python
-from ecdsa.util import PRNG
-from ecdsa import SigningKey
-rng1 = PRNG(b"seed")
-sk1 = SigningKey.generate(entropy=rng1)
-rng2 = PRNG(b"seed")
-sk2 = SigningKey.generate(entropy=rng2)
-# sk1 and sk2 are the same key
-```
-
-Likewise, ECDSA signature generation requires a random number, and each
-signature must use a different one (using the same number twice will
-immediately reveal the private signing key). The `sk.sign()` method takes an
-`entropy=` argument which behaves the same as `SigningKey.generate(entropy=)`.
-
-## Deterministic Signatures
-
-If you call `SigningKey.sign_deterministic(data)` instead of `.sign(data)`,
-the code will generate a deterministic signature instead of a random one.
-This uses the algorithm from RFC6979 to safely generate a unique `k` value,
-derived from the private key and the message being signed. Each time you sign
-the same message with the same key, you will get the same signature (using
-the same `k`).
-
-This may become the default in a future version, as it is not vulnerable to
-failures of the entropy source.
-
-## Examples
-
-Create a NIST192p key pair and immediately save both to disk:
-
-```python
-from ecdsa import SigningKey
-sk = SigningKey.generate()
-vk = sk.verifying_key
-with open("private.pem", "wb") as f:
-    f.write(sk.to_pem())
-with open("public.pem", "wb") as f:
-    f.write(vk.to_pem())
-```
-
-Load a signing key from disk, use it to sign a message (using SHA-1), and write
-the signature to disk:
-
-```python
-from ecdsa import SigningKey
-with open("private.pem") as f:
-    sk = SigningKey.from_pem(f.read())
-with open("message", "rb") as f:
-    message = f.read()
-sig = sk.sign(message)
-with open("signature", "wb") as f:
-    f.write(sig)
-```
-
-Load the verifying key, message, and signature from disk, and verify the
-signature (assume SHA-1 hash):
-
-```python
-from ecdsa import VerifyingKey, BadSignatureError
-vk = VerifyingKey.from_pem(open("public.pem").read())
-with open("message", "rb") as f:
-    message = f.read()
-with open("signature", "rb") as f:
-    sig = f.read()
 try:
-    vk.verify(sig, message)
-    print "good signature"
-except BadSignatureError:
-    print "BAD SIGNATURE"
+
+  # Check that the email address is valid. Turn on check_deliverability
+  # for first-time validations like on account creation pages (but not
+  # login pages).
+  emailinfo = validate_email(email, check_deliverability=False)
+
+  # After this point, use only the normalized form of the email address,
+  # especially before going to a database query.
+  email = emailinfo.normalized
+
+except EmailNotValidError as e:
+
+  # The exception message is human-readable explanation of why it's
+  # not a valid (or deliverable) email address.
+  print(str(e))
 ```
 
-Create a NIST521p key pair:
+This validates the address and gives you its normalized form. You should
+**put the normalized form in your database** and always normalize before
+checking if an address is in your database. When using this in a login form,
+set `check_deliverability` to `False` to avoid unnecessary DNS queries.
+
+Usage
+-----
+
+### Overview
+
+The module provides a function `validate_email(email_address)` which
+takes an email address and:
+
+- Raises a `EmailNotValidError` with a helpful, human-readable error
+  message explaining why the email address is not valid, or
+- Returns an object with a normalized form of the email address (which
+  you should use!) and other information about it.
+
+When an email address is not valid, `validate_email` raises either an
+`EmailSyntaxError` if the form of the address is invalid or an
+`EmailUndeliverableError` if the domain name fails DNS checks. Both
+exception classes are subclasses of `EmailNotValidError`, which in turn
+is a subclass of `ValueError`.
+
+But when an email address is valid, an object is returned containing
+a normalized form of the email address (which you should use!) and
+other information.
+
+The validator doesn't, by default, permit obsoleted forms of email addresses
+that no one uses anymore even though they are still valid and deliverable, since
+they will probably give you grief if you're using email for login. (See
+later in the document about how to allow some obsolete forms.)
+
+The validator optionally checks that the domain name in the email address has
+a DNS MX record indicating that it can receive email. (Except a Null MX record.
+If there is no MX record, a fallback A/AAAA-record is permitted, unless
+a reject-all SPF record is present.) DNS is slow and sometimes unavailable or
+unreliable, so consider whether these checks are useful for your use case and
+turn them off if they aren't.
+There is nothing to be gained by trying to actually contact an SMTP server, so
+that's not done here. For privacy, security, and practicality reasons, servers
+are good at not giving away whether an address is
+deliverable or not: email addresses that appear to accept mail at first
+can bounce mail after a delay, and bounced mail may indicate a temporary
+failure of a good email address (sometimes an intentional failure, like
+greylisting).
+
+### Options
+
+The `validate_email` function also accepts the following keyword arguments
+(defaults are as shown below):
+
+`check_deliverability=True`: If true, DNS queries are made to check that the domain name in the email address (the part after the @-sign) can receive mail, as described above. Set to `False` to skip this DNS-based check. It is recommended to pass `False` when performing validation for login pages (but not account creation pages) since re-validation of a previously validated domain in your database by querying DNS at every login is probably undesirable. You can also set `email_validator.CHECK_DELIVERABILITY` to `False` to turn this off for all calls by default.
+
+`dns_resolver=None`: Pass an instance of [dns.resolver.Resolver](https://dnspython.readthedocs.io/en/latest/resolver-class.html) to control the DNS resolver including setting a timeout and [a cache](https://dnspython.readthedocs.io/en/latest/resolver-caching.html). The `caching_resolver` function shown below is a helper function to construct a dns.resolver.Resolver with a [LRUCache](https://dnspython.readthedocs.io/en/latest/resolver-caching.html#dns.resolver.LRUCache). Reuse the same resolver instance across calls to `validate_email` to make use of the cache.
+
+`test_environment=False`: If `True`, DNS-based deliverability checks are disabled and  `test` and `**.test` domain names are permitted (see below). You can also set `email_validator.TEST_ENVIRONMENT` to `True` to turn it on for all calls by default.
+
+`allow_smtputf8=True`: Set to `False` to prohibit internationalized addresses that would
+    require the
+    [SMTPUTF8](https://tools.ietf.org/html/rfc6531) extension. You can also set `email_validator.ALLOW_SMTPUTF8` to `False` to turn it off for all calls by default.
+
+`allow_quoted_local=False`: Set to `True` to allow obscure and potentially problematic email addresses in which the part of the address before the @-sign contains spaces, @-signs, or other surprising characters when the local part is surrounded in quotes (so-called quoted-string local parts). In the object returned by `validate_email`, the normalized local part removes any unnecessary backslash-escaping and even removes the surrounding quotes if the address would be valid without them. You can also set `email_validator.ALLOW_QUOTED_LOCAL` to `True` to turn this on for all calls by default.
+
+`allow_domain_literal=False`: Set to `True` to allow bracketed IPv4 and "IPv6:"-prefixed IPv6 addresses in the domain part of the email address. No deliverability checks are performed for these addresses. In the object returned by `validate_email`, the normalized domain will use the condensed IPv6 format, if applicable. The object's `domain_address` attribute will hold the parsed `ipaddress.IPv4Address` or `ipaddress.IPv6Address` object if applicable. You can also set `email_validator.ALLOW_DOMAIN_LITERAL` to `True` to turn this on for all calls by default.
+
+`allow_display_name=False`: Set to `True` to allow a display name and bracketed address in the input string, like `My Name <me@example.org>`. It's implemented in the spirit but not the letter of RFC 5322 3.4, so it may be stricter or more relaxed than what you want. The display name, if present, is provided in the returned object's `display_name` field after being unquoted and unescaped. You can also set `email_validator.ALLOW_DISPLAY_NAME` to `True` to turn this on for all calls by default.
+
+`allow_empty_local=False`: Set to `True` to allow an empty local part (i.e.
+    `@example.com`), e.g. for validating Postfix aliases.
+    
+`strict=False`: Set to `True` to perform additional syntax checks (currently only a local part length check). This should be used by mail service providers at address creation to ensure email addresses meet broad compatibility requirements.
+
+### DNS timeout and cache
+
+When validating many email addresses or to control the timeout (the default is 15 seconds), create a caching [dns.resolver.Resolver](https://dnspython.readthedocs.io/en/latest/resolver-class.html) to reuse in each call. The `caching_resolver` function returns one easily for you:
 
 ```python
-from ecdsa import SigningKey, NIST521p
-sk = SigningKey.generate(curve=NIST521p)
-vk = sk.verifying_key
+from email_validator import validate_email, caching_resolver
+
+resolver = caching_resolver(timeout=10)
+
+while True:
+  validate_email(email, dns_resolver=resolver)
 ```
 
-Create three independent signing keys from a master seed:
+### Test addresses
+
+This library rejects email addresses that use the [Special Use Domain Names](https://www.iana.org/assignments/special-use-domain-names/special-use-domain-names.xhtml) `invalid`, `localhost`, `test`, and some others by raising `EmailSyntaxError`. This is to protect your system from abuse: You probably don't want a user to be able to cause an email to be sent to `localhost` (although they might be able to still do so via a malicious MX record). However, in your non-production test environments you may want to use `@test` or `@myname.test` email addresses. There are three ways you can allow this:
+
+1. Add `test_environment=True` to the call to `validate_email` (see above).
+2. Set `email_validator.TEST_ENVIRONMENT` to `True` globally.
+3. Remove the special-use domain name that you want to use from `email_validator.SPECIAL_USE_DOMAIN_NAMES`, e.g.:
 
 ```python
-from ecdsa import NIST192p, SigningKey
-from ecdsa.util import randrange_from_seed__trytryagain
-
-def make_key_from_seed(seed, curve=NIST192p):
-    secexp = randrange_from_seed__trytryagain(seed, curve.order)
-    return SigningKey.from_secret_exponent(secexp, curve)
-
-sk1 = make_key_from_seed("1:%s" % seed)
-sk2 = make_key_from_seed("2:%s" % seed)
-sk3 = make_key_from_seed("3:%s" % seed)
+import email_validator
+email_validator.SPECIAL_USE_DOMAIN_NAMES.remove("test")
 ```
 
-Load a verifying key from disk and print it using hex encoding in
-uncompressed and compressed format (defined in X9.62 and SEC1 standards):
+It is tempting to use `@example.com/net/org` in tests. They are *not* in this library's `SPECIAL_USE_DOMAIN_NAMES` list so you can, but shouldn't, use them. These domains are reserved to IANA for use in documentation so there is no risk of accidentally emailing someone at those domains. But beware that this library will nevertheless reject these domain names if DNS-based deliverability checks are not disabled because these domains do not resolve to domains that accept email. In tests, consider using your own domain name or `@test` or `@myname.test` instead.
+
+Internationalized email addresses
+---------------------------------
+
+The email protocol SMTP and the domain name system DNS have historically
+only allowed English (ASCII) characters in email addresses and domain names,
+respectively. Each has adapted to internationalization in a separate
+way, creating two separate aspects to email address internationalization.
+
+(If your mail submission library doesn't support Unicode at all, then
+immediately prior to mail submission you must replace the email address with
+its ASCII-ized form. This library gives you back the ASCII-ized form in the
+`ascii_email` field in the returned object.)
+
+### Internationalized domain names (IDN)
+
+The first is [internationalized domain names (RFC
+5891)](https://tools.ietf.org/html/rfc5891), a.k.a IDNA 2008. The DNS
+system has not been updated with Unicode support. Instead, internationalized
+domain names are converted into a special IDNA ASCII "[Punycode](https://www.rfc-editor.org/rfc/rfc3492.txt)"
+form starting with `xn--`. When an email address has non-ASCII
+characters in its domain part, the domain part is replaced with its IDNA
+ASCII equivalent form in the process of mail transmission. Your mail
+submission library probably does this for you transparently. ([Compliance
+around the web is not very good though](http://archives.miloush.net/michkap/archive/2012/02/27/10273315.html).) This library conforms to IDNA 2008
+using the [idna](https://github.com/kjd/idna) module by Kim Davies.
+
+### Internationalized local parts
+
+The second sort of internationalization is internationalization in the
+*local* part of the address (before the @-sign). In non-internationalized
+email addresses, only English letters, numbers, and some punctuation
+(`._!#$%&'^``*+-=~/?{|}`) are allowed. In internationalized email address
+local parts, a wider range of Unicode characters are allowed.
+
+Email addresses with these non-ASCII characters require that your mail
+submission library and all the mail servers along the route to the destination,
+including your own outbound mail server, all support the
+[SMTPUTF8 (RFC 6531)](https://tools.ietf.org/html/rfc6531) extension.
+Support for SMTPUTF8 varies. If you know ahead of time that SMTPUTF8 is not
+supported by your mail submission stack, then you must filter out addresses that
+require SMTPUTF8 using the `allow_smtputf8=False` keyword argument (see above).
+This will cause the validation function to raise a `EmailSyntaxError` if
+delivery would require SMTPUTF8. If you do not set `allow_smtputf8=False`,
+you can also check the value of the `smtputf8` field in the returned object.
+
+### Unsafe Unicode characters are rejected
+
+A surprisingly large number of Unicode characters are not safe to display,
+especially when the email address is concatenated with other text, so this
+library tries to protect you by not permitting reserved, non-, private use,
+formatting (which can be used to alter the display order of characters),
+whitespace, and control characters, and combining characters
+as the first character of the local part and the domain name (so that they
+cannot combine with something outside of the email address string or with
+the @-sign). See https://qntm.org/safe and https://trojansource.codes/
+for relevant prior work. (Other than whitespace, these are checks that
+you should be applying to nearly all user inputs in a security-sensitive
+context.) This does not guard against the well known problem that many
+Unicode characters look alike, which can be used to fool humans reading
+displayed text.
+
+
+Normalization
+-------------
+
+### Unicode Normalization
+
+The use of Unicode in email addresses introduced a normalization
+problem. Different Unicode strings can look identical and have the same
+semantic meaning to the user. The `normalized` field returned on successful
+validation provides the correctly normalized form of the given email
+address.
+
+For example, the CJK fullwidth Latin letters are considered semantically
+equivalent in domain names to their ASCII counterparts. This library
+normalizes them to their ASCII counterparts (as required by IDNA):
 
 ```python
-from ecdsa import VerifyingKey
-
-with open("public.pem") as f:
-    vk = VerifyingKey.from_pem(f.read())
-
-print("uncompressed: {0}".format(vk.to_string("uncompressed").hex()))
-print("compressed: {0}".format(vk.to_string("compressed").hex()))
+emailinfo = validate_email("me@Ｄｏｍａｉｎ.com")
+print(emailinfo.normalized)
+print(emailinfo.ascii_email)
+# prints "me@domain.com" twice
 ```
 
-Load a verifying key from a hex string from compressed format, output
-uncompressed:
+Because an end-user might type their email address in different (but
+equivalent) un-normalized forms at different times, you ought to
+replace what they enter with the normalized form immediately prior to
+going into your database (during account creation), querying your database
+(during login), or sending outbound mail.
+
+The normalizations include lowercasing the domain part of the email
+address (domain names are case-insensitive), [Unicode "NFC"
+normalization](https://en.wikipedia.org/wiki/Unicode_equivalence) of the
+whole address (which turns characters plus [combining
+characters](https://en.wikipedia.org/wiki/Combining_character) into
+precomposed characters where possible, replacement of [fullwidth and
+halfwidth
+characters](https://en.wikipedia.org/wiki/Halfwidth_and_fullwidth_forms)
+in the domain part, possibly other
+[UTS46](http://unicode.org/reports/tr46) mappings on the domain part,
+and conversion from Punycode to Unicode characters.
+
+Normalization may change the characters in the email address and the
+length of the email address, such that a string might be a valid address
+before normalization but invalid after, or vice versa. This library only
+permits addresses that are valid both before and after normalization.
+
+(See [RFC 6532 (internationalized email) section
+3.1](https://tools.ietf.org/html/rfc6532#section-3.1) and [RFC 5895
+(IDNA 2008) section 2](http://www.ietf.org/rfc/rfc5895.txt).)
+
+### Other Normalization
+
+Normalization is also applied to quoted-string local parts and domain
+literal IPv6 addresses if you have allowed them by the `allow_quoted_local`
+and `allow_domain_literal` options. In quoted-string local parts, unnecessary
+backslash escaping is removed and even the surrounding quotes are removed if
+they are unnecessary. For IPv6 domain literals, the IPv6 address is
+normalized to condensed form. [RFC 2142](https://datatracker.ietf.org/doc/html/rfc2142)
+also requires lowercase normalization for some specific mailbox names like `postmaster@`.
+
+
+Examples
+--------
+
+For the email address `test@joshdata.me`, the returned object is:
 
 ```python
-from ecdsa import VerifyingKey, NIST256p
-
-comp_str = '022799c0d0ee09772fdd337d4f28dc155581951d07082fb19a38aa396b67e77759'
-vk = VerifyingKey.from_string(bytearray.fromhex(comp_str), curve=NIST256p)
-print(vk.to_string("uncompressed").hex())
+ValidatedEmail(
+  normalized='test@joshdata.me',
+  local_part='test',
+  domain='joshdata.me',
+  ascii_email='test@joshdata.me',
+  ascii_local_part='test',
+  ascii_domain='joshdata.me',
+  smtputf8=False)
 ```
 
-ECDH key exchange with remote party:
+For the fictitious but valid address `example@ツ.ⓁⒾⒻⒺ`, which has an
+internationalized domain but ASCII local part, the returned object is:
 
 ```python
-from ecdsa import ECDH, NIST256p
+ValidatedEmail(
+  normalized='example@ツ.life',
+  local_part='example',
+  domain='ツ.life',
+  ascii_email='example@xn--bdk.life',
+  ascii_local_part='example',
+  ascii_domain='xn--bdk.life',
+  smtputf8=False)
 
-ecdh = ECDH(curve=NIST256p)
-ecdh.generate_private_key()
-local_public_key = ecdh.get_public_key()
-#send `local_public_key` to remote party and receive `remote_public_key` from remote party
-with open("remote_public_key.pem") as e:
-    remote_public_key = e.read()
-ecdh.load_received_public_key_pem(remote_public_key)
-secret = ecdh.generate_sharedsecret_bytes()
 ```
+
+Note that `normalized` and other fields provide a normalized form of the
+email address, domain name, and (in other cases) local part (see earlier
+discussion of normalization), which you should use in your database.
+
+Calling `validate_email` with the ASCII form of the above email address,
+`example@xn--bdk.life`, returns the exact same information (i.e., the
+`normalized` field always will contain Unicode characters, not Punycode).
+
+For the fictitious address `ツ-test@joshdata.me`, which has an
+internationalized local part, the returned object is:
+
+```python
+ValidatedEmail(
+  normalized='ツ-test@joshdata.me',
+  local_part='ツ-test',
+  domain='joshdata.me',
+  ascii_email=None,
+  ascii_local_part=None,
+  ascii_domain='joshdata.me',
+  smtputf8=True)
+```
+
+Now `smtputf8` is `True` and `ascii_email` is `None` because the local
+part of the address is internationalized. The `local_part` and `normalized` fields
+return the normalized form of the address.
+
+Return value
+------------
+
+When an email address passes validation, the fields in the returned object
+are:
+
+| Field | Value |
+| -----:|-------|
+| `normalized` | The normalized form of the email address that you should put in your database. This combines the `local_part` and `domain` fields (see below). |
+| `ascii_email` | If set, an ASCII-only form of the normalized email address by replacing the domain part with [IDNA](https://tools.ietf.org/html/rfc5891) [Punycode](https://www.rfc-editor.org/rfc/rfc3492.txt). This field will be present when an ASCII-only form of the email address exists (including if the email address is already ASCII). If the local part of the email address contains internationalized characters, `ascii_email` will be `None`. If set, it merely combines `ascii_local_part` and `ascii_domain`. |
+| `local_part` | The normalized local part of the given email address (before the @-sign). Normalization includes Unicode NFC normalization and removing unnecessary quoted-string quotes and backslashes. If `allow_quoted_local` is True and the surrounding quotes are necessary, the quotes _will_ be present in this field. |
+| `ascii_local_part` | If set, the local part, which is composed of ASCII characters only. |
+| `domain` | The canonical internationalized Unicode form of the domain part of the email address. If the returned string contains non-ASCII characters, either the [SMTPUTF8](https://tools.ietf.org/html/rfc6531) feature of your mail relay will be required to transmit the message or else the email address's domain part must be converted to IDNA ASCII first: Use `ascii_domain` field instead. |
+| `ascii_domain` | The [IDNA](https://tools.ietf.org/html/rfc5891) [Punycode](https://www.rfc-editor.org/rfc/rfc3492.txt)-encoded form of the domain part of the given email address, as it would be transmitted on the wire. |
+| `domain_address` | If domain literals are allowed and if the email address contains one, an `ipaddress.IPv4Address` or `ipaddress.IPv6Address` object. |
+| `display_name` | If no display name was present and angle brackets do not surround the address, this will be `None`; otherwise, it will be set to the display name, or the empty string if there were angle brackets but no display name. If the display name was quoted, it will be unquoted and unescaped. |
+| `smtputf8` | A boolean indicating that the [SMTPUTF8](https://tools.ietf.org/html/rfc6531) feature of your mail relay will be required to transmit messages to this address because the local part of the address has non-ASCII characters (the local part cannot be IDNA-encoded). If `allow_smtputf8=False` is passed as an argument, this flag will always be false because an exception is raised if it would have been true. |
+| `mx` | A list of (priority, domain) tuples of MX records specified in the DNS for the domain (see [RFC 5321 section 5](https://tools.ietf.org/html/rfc5321#section-5)). May be `None` if the deliverability check could not be completed because of a temporary issue like a timeout. |
+| `mx_fallback_type` | `None` if an `MX` record is found. If no MX records are actually specified in DNS and instead are inferred, through an obsolete mechanism, from A or AAAA records, the value is the type of DNS record used instead (`A` or `AAAA`). May be `None` if the deliverability check could not be completed because of a temporary issue like a timeout. |
+| `spf` | Any SPF record found while checking deliverability. Only set if the SPF record is queried. |
+
+Assumptions
+-----------
+
+By design, this validator does not pass all email addresses that
+strictly conform to the standards. Many email address forms are obsolete
+or likely to cause trouble:
+
+* The validator assumes the email address is intended to be
+  usable on the public Internet. The domain part
+  of the email address must be a resolvable domain name
+  (see the deliverability checks described above).
+  Most [Special Use Domain Names](https://www.iana.org/assignments/special-use-domain-names/special-use-domain-names.xhtml)
+  and their subdomains, as well as
+  domain names without a `.`, are rejected as a syntax error
+  (except see the `test_environment` parameter above).
+* Obsolete email syntaxes are rejected:
+  The unusual ["(comment)" syntax](https://github.com/JoshData/python-email-validator/issues/77)
+  is rejected. Extremely old obsolete syntaxes are
+  rejected. Quoted-string local parts and domain-literal addresses
+  are rejected by default, but there are options to allow them (see above).
+  No one uses these forms anymore, and I can't think of any reason why anyone
+  using this library would need to accept them.
+
+Testing
+-------
+
+Tests can be run using
+
+```sh
+pip install -r test_requirements.txt 
+make test
+```
+
+Tests run with mocked DNS responses. When adding or changing tests, temporarily turn on the `BUILD_MOCKED_DNS_RESPONSE_DATA` flag in `tests/mocked_dns_responses.py` to re-build the database of mocked responses from live queries.
+
+For Project Maintainers
+-----------------------
+
+The package is distributed as a universal wheel and as a source package.
+
+To release:
+
+* Update CHANGELOG.md.
+* Update the version number in `email_validator/version.py`.
+* Make & push a commit with the new version number and make sure tests pass.
+* Make a release at https://github.com/JoshData/python-email-validator/releases/new creating a new tag (or use command below).
+* Publish a source and wheel distribution to pypi (see command below).
+
+```sh
+git tag v$(cat email_validator/version.py  | sed "s/.* = //" | sed 's/"//g')
+git push --tags
+./release_to_pypi.sh
+```
+
+License
+-------
+
+This project is free of any copyright restrictions per the [Unlicense](https://unlicense.org/). (Prior to Feb. 4, 2024, the project was made available under the terms of the [CC0 1.0 Universal public domain dedication](http://creativecommons.org/publicdomain/zero/1.0/).) See [LICENSE](LICENSE) and [CONTRIBUTING.md](CONTRIBUTING.md).
