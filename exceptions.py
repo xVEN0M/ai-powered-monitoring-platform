@@ -1,52 +1,13 @@
-# This file is dual licensed under the terms of the Apache License, Version
-# 2.0, and the BSD License. See the LICENSE file in the root of this repository
-# for complete details.
-
-from __future__ import annotations
-
-import typing
-
-from cryptography.hazmat.bindings._rust import exceptions as rust_exceptions
-
-if typing.TYPE_CHECKING:
-    from cryptography.hazmat.bindings._rust import openssl as rust_openssl
-
-_Reasons = rust_exceptions._Reasons
-
-
-class UnsupportedAlgorithm(Exception):
-    def __init__(self, message: str, reason: _Reasons | None = None) -> None:
-        super().__init__(message)
-        self._reason = reason
-
-
-class AlreadyFinalized(Exception):
+class EmailNotValidError(ValueError):
+    """Parent class of all exceptions raised by this module."""
     pass
 
 
-class AlreadyUpdated(Exception):
+class EmailSyntaxError(EmailNotValidError):
+    """Exception raised when an email address fails validation because of its form."""
     pass
 
 
-class NotYetFinalized(Exception):
-    pass
-
-
-class InvalidTag(Exception):
-    pass
-
-
-class InvalidSignature(Exception):
-    pass
-
-
-class InternalError(Exception):
-    def __init__(
-        self, msg: str, err_code: list[rust_openssl.OpenSSLError]
-    ) -> None:
-        super().__init__(msg)
-        self.err_code = err_code
-
-
-class InvalidKey(Exception):
+class EmailUndeliverableError(EmailNotValidError):
+    """Exception raised when an email address fails validation because its domain name does not appear deliverable."""
     pass

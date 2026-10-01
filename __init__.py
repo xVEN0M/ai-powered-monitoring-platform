@@ -1,104 +1,103 @@
-# while we don't use six in this file, we did bundle it for a long time, so
-# keep as part of module in a virtual way (through __all__)
-import six
-from .keys import (
-    SigningKey,
-    VerifyingKey,
-    BadSignatureError,
-    BadDigestError,
-    MalformedPointError,
-)
-from .curves import (
-    NIST192p,
-    NIST224p,
-    NIST256p,
-    NIST384p,
-    NIST521p,
-    SECP256k1,
-    BRAINPOOLP160r1,
-    BRAINPOOLP192r1,
-    BRAINPOOLP224r1,
-    BRAINPOOLP256r1,
-    BRAINPOOLP320r1,
-    BRAINPOOLP384r1,
-    BRAINPOOLP512r1,
-    SECP112r1,
-    SECP112r2,
-    SECP128r1,
-    SECP160r1,
-    Ed25519,
-    Ed448,
-    BRAINPOOLP160t1,
-    BRAINPOOLP192t1,
-    BRAINPOOLP224t1,
-    BRAINPOOLP256t1,
-    BRAINPOOLP320t1,
-    BRAINPOOLP384t1,
-    BRAINPOOLP512t1,
-)
-from .ecdh import (
-    ECDH,
-    NoKeyError,
-    NoCurveError,
-    InvalidCurveError,
-    InvalidSharedSecretError,
-)
-from .der import UnexpectedDER
-from . import _version
+from typing import TYPE_CHECKING
 
-# This code comes from http://github.com/tlsfuzzer/python-ecdsa
-__all__ = [
-    "curves",
-    "der",
-    "ecdsa",
-    "ellipticcurve",
-    "keys",
-    "numbertheory",
-    "test_pyecdsa",
-    "util",
-    "six",
+# Export the main method, helper methods, and the public data types.
+from .exceptions import EmailNotValidError, EmailSyntaxError, EmailUndeliverableError
+from .types import ValidatedEmail
+from .validate_email import validate_email
+from .version import __version__
+
+__all__ = ["validate_email",
+           "ValidatedEmail", "EmailNotValidError",
+           "EmailSyntaxError", "EmailUndeliverableError",
+           "caching_resolver", "__version__"]
+
+if TYPE_CHECKING:
+    from .deliverability import caching_resolver
+else:
+    def caching_resolver(*args, **kwargs):
+        # Lazy load `deliverability` as it is slow to import (due to dns.resolver)
+        from .deliverability import caching_resolver
+
+        return caching_resolver(*args, **kwargs)
+
+
+# These global attributes are a part of the library's API and can be
+# changed by library users.
+
+# Default values for keyword arguments.
+
+ALLOW_SMTPUTF8 = True
+ALLOW_EMPTY_LOCAL = False
+ALLOW_QUOTED_LOCAL = False
+ALLOW_DOMAIN_LITERAL = False
+ALLOW_DISPLAY_NAME = False
+STRICT = False
+GLOBALLY_DELIVERABLE = True
+CHECK_DELIVERABILITY = True
+TEST_ENVIRONMENT = False
+DEFAULT_TIMEOUT = 15  # secs
+
+# IANA Special Use Domain Names
+# Last Updated 2021-09-21
+# https://www.iana.org/assignments/special-use-domain-names/special-use-domain-names.txt
+#
+# The domain names without dots would be caught by the check that the domain
+# name in an email address must have a period, but this list will also catch
+# subdomains of these domains, which are also reserved.
+SPECIAL_USE_DOMAIN_NAMES = [
+    # The "arpa" entry here is consolidated from a lot of arpa subdomains
+    # for private address (i.e. non-routable IP addresses like 172.16.x.x)
+    # reverse mapping, plus some other subdomains. Although RFC 6761 says
+    # that application software should not treat these domains as special,
+    # they are private-use domains and so cannot have globally deliverable
+    # email addresses, which is an assumption of this library, and probably
+    # all of arpa is similarly special-use, so we reject it all.
+    "arpa",
+
+    # RFC 6761 says applications "SHOULD NOT" treat the "example" domains
+    # as special, i.e. applications should accept these domains.
+    #
+    # The domain "example" alone fails our syntax validation because it
+    # lacks a dot (we assume no one has an email address on a TLD directly).
+    # "@example.com/net/org" will currently fail DNS-based deliverability
+    # checks because IANA publishes a NULL MX for these domains, and
+    # "@mail.example[.com/net/org]" and other subdomains will fail DNS-
+    # based deliverability checks because IANA does not publish MX or A
+    # DNS records for these subdomains.
+    # "example", # i.e. "wwww.example"
+    # "example.com",
+    # "example.net",
+    # "example.org",
+
+    # RFC 6761 says that applications are permitted to treat this domain
+    # as special and that DNS should return an immediate negative response,
+    # so we also immediately reject this domain, which also follows the
+    # purpose of the domain.
+    "invalid",
+
+    # RFC 6762 says that applications "may" treat ".local" as special and
+    # that "name resolution APIs and libraries SHOULD recognize these names
+    # as special," and since ".local" has no global definition, we reject
+    # it, as we expect email addresses to be gloally routable.
+    "local",
+
+    # RFC 6761 says that applications (like this library) are permitted
+    # to treat "localhost" as special, and since it cannot have a globally
+    # deliverable email address, we reject it.
+    "localhost",
+
+    # RFC 7686 says "applications that do not implement the Tor protocol
+    # SHOULD generate an error upon the use of .onion and SHOULD NOT
+    # perform a DNS lookup.
+    "onion",
+
+    # Although RFC 6761 says that application software should not treat
+    # these domains as special, it also warns users that the address may
+    # resolve differently in different systems, and therefore it cannot
+    # have a globally routable email address, which is an assumption of
+    # this library, so we reject "@test" and "@*.test" addresses, unless
+    # the test_environment keyword argument is given, to allow their use
+    # in application-level test environments. These domains will generally
+    # fail deliverability checks because "test" is not an actual TLD.
+    "test",
 ]
-
-_hush_pyflakes = [
-    SigningKey,
-    VerifyingKey,
-    BadSignatureError,
-    BadDigestError,
-    MalformedPointError,
-    UnexpectedDER,
-    InvalidCurveError,
-    NoKeyError,
-    InvalidSharedSecretError,
-    ECDH,
-    NoCurveError,
-    NIST192p,
-    NIST224p,
-    NIST256p,
-    NIST384p,
-    NIST521p,
-    SECP256k1,
-    BRAINPOOLP160r1,
-    BRAINPOOLP192r1,
-    BRAINPOOLP224r1,
-    BRAINPOOLP256r1,
-    BRAINPOOLP320r1,
-    BRAINPOOLP384r1,
-    BRAINPOOLP512r1,
-    SECP112r1,
-    SECP112r2,
-    SECP128r1,
-    SECP160r1,
-    Ed25519,
-    Ed448,
-    six.b(""),
-    BRAINPOOLP160t1,
-    BRAINPOOLP192t1,
-    BRAINPOOLP224t1,
-    BRAINPOOLP256t1,
-    BRAINPOOLP320t1,
-    BRAINPOOLP384t1,
-    BRAINPOOLP512t1,
-]
-del _hush_pyflakes
-
-__version__ = _version.get_versions()["version"]
