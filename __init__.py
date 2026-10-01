@@ -1,71 +1,78 @@
 # Copyright (C) Dnspython Contributors, see LICENSE for text of ISC license
 
-# Copyright (C) 2003-2007, 2009-2011 Nominum, Inc.
-#
-# Permission to use, copy, modify, and distribute this software and its
-# documentation for any purpose with or without fee is hereby granted,
-# provided that the above copyright notice and this permission notice
-# appear in all copies.
-#
-# THE SOFTWARE IS PROVIDED "AS IS" AND NOMINUM DISCLAIMS ALL WARRANTIES
-# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL NOMINUM BE LIABLE FOR
-# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
-# OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+from typing import Any, Dict, List, Tuple
 
-"""Class ANY (generic) rdata type classes."""
+import dns._features
+import dns.asyncbackend
 
-__all__ = [
-    "AFSDB",
-    "AMTRELAY",
-    "AVC",
-    "CAA",
-    "CDNSKEY",
-    "CDS",
-    "CERT",
-    "CNAME",
-    "CSYNC",
-    "DLV",
-    "DNAME",
-    "DNSKEY",
-    "DS",
-    "DSYNC",
-    "EUI48",
-    "EUI64",
-    "GPOS",
-    "HINFO",
-    "HIP",
-    "ISDN",
-    "L32",
-    "L64",
-    "LOC",
-    "LP",
-    "MX",
-    "NID",
-    "NINFO",
-    "NS",
-    "NSEC",
-    "NSEC3",
-    "NSEC3PARAM",
-    "OPENPGPKEY",
-    "OPT",
-    "PTR",
-    "RESINFO",
-    "RP",
-    "RRSIG",
-    "RT",
-    "SMIMEA",
-    "SOA",
-    "SPF",
-    "SSHFP",
-    "TKEY",
-    "TLSA",
-    "TSIG",
-    "TXT",
-    "URI",
-    "WALLET",
-    "X25",
-    "ZONEMD",
-]
+if dns._features.have("doq"):
+    from dns._asyncbackend import NullContext
+    from dns.quic._asyncio import AsyncioQuicConnection as AsyncioQuicConnection
+    from dns.quic._asyncio import AsyncioQuicManager
+    from dns.quic._asyncio import AsyncioQuicStream as AsyncioQuicStream
+    from dns.quic._common import AsyncQuicConnection  # pyright: ignore
+    from dns.quic._common import AsyncQuicManager as AsyncQuicManager
+    from dns.quic._sync import SyncQuicConnection  # pyright: ignore
+    from dns.quic._sync import SyncQuicStream  # pyright: ignore
+    from dns.quic._sync import SyncQuicManager as SyncQuicManager
+
+    have_quic = True
+
+    def null_factory(
+        *args,  # pylint: disable=unused-argument
+        **kwargs,  # pylint: disable=unused-argument
+    ):
+        return NullContext(None)
+
+    def _asyncio_manager_factory(
+        context, *args, **kwargs  # pylint: disable=unused-argument
+    ):
+        return AsyncioQuicManager(*args, **kwargs)
+
+    # We have a context factory and a manager factory as for trio we need to have
+    # a nursery.
+
+    _async_factories: Dict[str, Tuple[Any, Any]] = {
+        "asyncio": (null_factory, _asyncio_manager_factory)
+    }
+
+    if dns._features.have("trio"):
+        import trio
+
+        # pylint: disable=ungrouped-imports
+        from dns.quic._trio import TrioQuicConnection as TrioQuicConnection
+        from dns.quic._trio import TrioQuicManager
+        from dns.quic._trio import TrioQuicStream as TrioQuicStream
+
+        def _trio_context_factory():
+            return trio.open_nursery()
+
+        def _trio_manager_factory(context, *args, **kwargs):
+            return TrioQuicManager(context, *args, **kwargs)
+
+        _async_factories["trio"] = (_trio_context_factory, _trio_manager_factory)
+
+    def factories_for_backend(backend=None):
+        if backend is None:
+            backend = dns.asyncbackend.get_default_backend()
+        return _async_factories[backend.name()]
+
+else:  # pragma: no cover
+    have_quic = False
+
+    class AsyncQuicStream:  # type: ignore
+        pass
+
+    class AsyncQuicConnection:  # type: ignore
+        async def make_stream(self) -> Any:
+            raise NotImplementedError
+
+    class SyncQuicStream:  # type: ignore
+        pass
+
+    class SyncQuicConnection:  # type: ignore
+        def make_stream(self) -> Any:
+            raise NotImplementedError
+
+
+Headers = List[Tuple[bytes, bytes]]
